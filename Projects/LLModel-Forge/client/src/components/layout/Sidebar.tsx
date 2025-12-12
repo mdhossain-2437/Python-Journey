@@ -30,7 +30,7 @@ export function Sidebar() {
     <div className="flex h-screen w-64 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
       <div className="flex h-16 items-center border-b border-border px-6">
         <Activity className="mr-2 h-6 w-6 text-primary" />
-        <span className="text-lg font-bold tracking-tight">NexusML</span>
+        <span className="text-lg font-bold tracking-tight">LLModel-Forge</span>
       </div>
       
       <div className="flex-1 overflow-y-auto py-4">
