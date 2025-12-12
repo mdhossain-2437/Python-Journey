@@ -3,6 +3,8 @@ import { type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import cookieParser from "cookie-parser";
 import { storage } from "./storage";
+import { cache, CacheKeys, CacheTTL } from "./cache";
+import { getCookieManager, COOKIE_CONFIG, COOKIE_NAMES } from "./cookies";
 import {
   authMiddleware,
   optionalAuth,
@@ -56,16 +58,20 @@ export async function registerRoutes(
   // ==================== WEBSOCKET SERVER ====================
   const wss = new WebSocketServer({ noServer: true });
 
-  // Handle WebSocket upgrade requests
+  // Handle WebSocket upgrade requests - only for /ws path
   httpServer.on("upgrade", (request, socket, head) => {
-    const url = new URL(request.url || "", `http://${request.headers.host}`);
+    try {
+      const url = new URL(request.url || "", `http://${request.headers.host}`);
 
-    // Only handle /ws path
-    if (url.pathname === "/ws") {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit("connection", ws, request);
-      });
-    } else {
+      // Only handle /ws path, let other upgrades pass through (e.g., Vite HMR)
+      if (url.pathname === "/ws") {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit("connection", ws, request);
+        });
+      }
+      // Don't destroy socket for other paths - Vite HMR needs it
+    } catch (err) {
+      console.error("WebSocket upgrade error:", err);
       socket.destroy();
     }
   });
@@ -174,12 +180,9 @@ export async function registerRoutes(
       const user = await storage.createUser({ username, email, password, name });
       const token = generateToken({ id: user.id, username: user.username, email: user.email, name: user.name });
 
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
+      // Use cookie manager for secure cookie handling
+      const cookies = getCookieManager(req, res);
+      cookies.setToken(token, false);
 
       res.status(201).json({
         user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team },
@@ -200,6 +203,7 @@ export async function registerRoutes(
       }
 
       const { username, password } = parsed.data;
+      const rememberMe = req.body.rememberMe === true;
       const user = await storage.getUserByUsername(username);
 
       if (!user) {
@@ -213,12 +217,9 @@ export async function registerRoutes(
 
       const token = generateToken({ id: user.id, username: user.username, email: user.email, name: user.name });
 
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
+      // Use cookie manager for secure cookie handling
+      const cookies = getCookieManager(req, res);
+      cookies.setToken(token, rememberMe);
 
       res.json({
         user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team },
@@ -231,8 +232,9 @@ export async function registerRoutes(
   });
 
   // Logout
-  app.post("/api/auth/logout", (_req: Request, res: Response) => {
-    res.clearCookie("token");
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    const cookies = getCookieManager(req, res);
+    cookies.clearAuth();
     res.json({ message: "Logged out successfully" });
   });
 
@@ -802,6 +804,63 @@ export async function registerRoutes(
     });
   });
 
+  // ==================== CACHE MANAGEMENT ====================
+
+  // Get cache statistics (admin only)
+  app.get("/api/admin/cache/stats", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const stats = cache.getStats();
+      res.json({
+        ...stats,
+        hitRatePercent: `${(stats.hitRate * 100).toFixed(2)}%`,
+        sizeFormatted: formatBytes(stats.size),
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get cache stats" });
+    }
+  });
+
+  // Clear cache (admin only)
+  app.post("/api/admin/cache/clear", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const { pattern, tag } = req.body;
+
+      if (pattern) {
+        const count = cache.invalidatePattern(pattern);
+        res.json({ message: `Cleared ${count} entries matching pattern: ${pattern}` });
+      } else if (tag) {
+        const count = cache.invalidateByTag(tag);
+        res.json({ message: `Cleared ${count} entries with tag: ${tag}` });
+      } else {
+        cache.clear();
+        res.json({ message: "All cache cleared" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to clear cache" });
+    }
+  });
+
+  // Warm cache (admin only)
+  app.post("/api/admin/cache/warm", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      if ('warmCache' in storage) {
+        await (storage as any).warmCache();
+      }
+      res.json({ message: "Cache warmed successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to warm cache" });
+    }
+  });
+
   return httpServer;
+}
+
+// Helper function to format bytes
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 

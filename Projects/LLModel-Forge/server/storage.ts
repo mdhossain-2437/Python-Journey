@@ -738,4 +738,14 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Create base storage
+const baseStorage = new MemStorage();
+
+// Import cached storage wrapper (will be used when available)
+import { CachedStorage } from "./cached-storage";
+
+// Export cached storage for optimal performance
+export const storage = new CachedStorage(baseStorage);
+
+// Also export base storage for direct access if needed
+export { baseStorage };
