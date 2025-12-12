@@ -33,6 +33,7 @@ import { NeuralNetworkVisualizer, DAGGraph, ModelArchitectureBuilder, DAGNode, D
 import { AdvancedScatterPlot, Heatmap, RealTimeMetricStream, PhysicsVisualization, Particle } from "@/components/advanced-viz";
 import { MetricChart, SmoothingSlider, getRunColor } from "@/components/wandb-ui";
 import { QuantumSimulator, BlochSphere, QuantumStateVisualizer } from "@/components/quantum-viz";
+import { NeuralParticleSystem } from "@/components/neural-particle-system";
 import { Matrix, Activations, LossFunctions, Statistics, Metrics, LRSchedulers, Complex } from "@/lib/ml-math";
 
 // ==================== TRAINING SIMULATOR ====================
@@ -395,34 +396,73 @@ export default function Simulator() {
 
         {/* Neural Network Tab */}
         <TabsContent value="neural" className="mt-4 space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-            <Card className="border-border">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center justify-between">
-                  <span>Network Architecture</span>
-                  <Badge variant={training.isRunning ? "default" : "secondary"}>
-                    {training.isRunning ? "Training..." : "Idle"}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <NeuralNetworkVisualizer
-                  layers={layers}
-                  weights={weights}
-                  activations={activations}
-                  layerNames={["Input (784)", "Hidden (128)", "Hidden (64)", "Hidden (32)", "Output (10)"]}
-                  animated={training.isRunning}
-                  height={380}
-                />
-              </CardContent>
-            </Card>
+          {/* Main Particle System Visualization */}
+          <Card className="border-border overflow-hidden">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-primary" />
+                  Neural Network Simulation
+                </span>
+                <Badge variant={training.isRunning ? "default" : "secondary"} className="animate-pulse">
+                  {training.isRunning ? `Epoch ${training.currentEpoch}/${trainingConfig.epochs}` : "Ready"}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <NeuralParticleSystem
+                layers={layers}
+                isTraining={training.isRunning}
+                trainingProgress={training.currentEpoch / trainingConfig.epochs}
+                epoch={training.currentEpoch}
+                height={450}
+              />
+            </CardContent>
+          </Card>
 
+          {/* Bottom Row - Architecture + Stats */}
+          <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
             <Card className="border-border">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Layer Configuration</CardTitle>
+                <CardTitle className="text-base">Architecture</CardTitle>
               </CardHeader>
               <CardContent>
                 <ModelArchitectureBuilder layers={modelLayers} readOnly />
+              </CardContent>
+            </Card>
+
+            {/* Live Stats */}
+            <Card className="border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Live Training Metrics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Loss</div>
+                    <div className="text-2xl font-bold font-mono text-red-500">
+                      {training.currentState?.loss.toFixed(4) || "—"}
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Accuracy</div>
+                    <div className="text-2xl font-bold font-mono text-green-500">
+                      {training.currentState ? `${(training.currentState.accuracy * 100).toFixed(1)}%` : "—"}
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Parameters</div>
+                    <div className="text-2xl font-bold font-mono text-blue-500">
+                      {(784*128 + 128*64 + 64*32 + 32*10).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-muted/30 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Active Neurons</div>
+                    <div className="text-2xl font-bold font-mono text-purple-500">
+                      {Math.round((0.3 + training.currentEpoch / trainingConfig.epochs * 0.6) * (784 + 128 + 64 + 32 + 10))}
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
