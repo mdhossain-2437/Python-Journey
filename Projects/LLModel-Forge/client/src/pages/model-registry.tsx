@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useModels, usePromoteModel, useDeleteModel, type Model } from "@/hooks/use-api";
+import { useToast } from "@/hooks/use-toast";
 import {
   Search,
   Plus,
@@ -11,95 +13,12 @@ import {
   MoreVertical,
   AlertTriangle,
   Rocket,
-  Archive
+  Archive,
+  Loader2,
+  Trash2,
+  ArrowUpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface Model {
-  id: string;
-  name: string;
-  version: string;
-  stage: "development" | "staging" | "production" | "archived";
-  framework: string;
-  metrics: {
-    accuracy?: number;
-    f1Score?: number;
-    latency?: number;
-  };
-  author: string;
-  createdAt: string;
-  lastUpdated: string;
-  description: string;
-  tags: string[];
-}
-
-const models: Model[] = [
-  {
-    id: "model_001",
-    name: "fraud-detection-xgboost",
-    version: "3.2.1",
-    stage: "production",
-    framework: "XGBoost",
-    metrics: { accuracy: 0.956, f1Score: 0.942, latency: 12 },
-    author: "Jane Smith",
-    createdAt: "2024-01-15",
-    lastUpdated: "2024-02-10",
-    description: "Production fraud detection model for real-time transaction scoring",
-    tags: ["fraud", "real-time", "critical"]
-  },
-  {
-    id: "model_002",
-    name: "customer-churn-predictor",
-    version: "2.0.0",
-    stage: "staging",
-    framework: "LightGBM",
-    metrics: { accuracy: 0.891, f1Score: 0.876, latency: 8 },
-    author: "John Doe",
-    createdAt: "2024-02-01",
-    lastUpdated: "2024-02-12",
-    description: "Customer churn prediction model with SHAP explanations",
-    tags: ["churn", "customer-analytics"]
-  },
-  {
-    id: "model_003",
-    name: "sentiment-bert-large",
-    version: "1.5.0",
-    stage: "production",
-    framework: "PyTorch",
-    metrics: { accuracy: 0.923, f1Score: 0.918, latency: 45 },
-    author: "Alice Chen",
-    createdAt: "2023-12-20",
-    lastUpdated: "2024-01-28",
-    description: "BERT-based sentiment analysis for customer reviews",
-    tags: ["nlp", "sentiment", "bert"]
-  },
-  {
-    id: "model_004",
-    name: "demand-forecasting-lstm",
-    version: "4.1.0",
-    stage: "development",
-    framework: "TensorFlow",
-    metrics: { accuracy: 0.845, latency: 23 },
-    author: "Bob Wilson",
-    createdAt: "2024-02-08",
-    lastUpdated: "2024-02-13",
-    description: "LSTM model for multi-step demand forecasting",
-    tags: ["forecasting", "time-series", "lstm"]
-  },
-  {
-    id: "model_005",
-    name: "image-classifier-resnet",
-    version: "1.0.0",
-    stage: "archived",
-    framework: "PyTorch",
-    metrics: { accuracy: 0.782, f1Score: 0.765, latency: 67 },
-    author: "Jane Smith",
-    createdAt: "2023-08-15",
-    lastUpdated: "2023-11-20",
-    description: "ResNet50 model for product image classification (deprecated)",
-    tags: ["cv", "classification", "legacy"]
-  },
-];
 
 const stageConfig = {
   development: {
@@ -127,22 +46,65 @@ const stageConfig = {
 export default function ModelRegistry() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
-  const filteredModels = models.filter(model => {
+  const { data: models = [], isLoading, error } = useModels();
+  const promoteModel = usePromoteModel();
+  const deleteModel = useDeleteModel();
+  const { toast } = useToast();
+
+  const filteredModels = models.filter((model: Model) => {
     const matchesSearch = model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          model.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          model.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+                          (model.description?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                          (model.tags as string[])?.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStage = !selectedStage || model.stage === selectedStage;
     return matchesSearch && matchesStage;
   });
 
   const stageCounts = {
     all: models.length,
-    development: models.filter(m => m.stage === "development").length,
-    staging: models.filter(m => m.stage === "staging").length,
-    production: models.filter(m => m.stage === "production").length,
-    archived: models.filter(m => m.stage === "archived").length,
+    development: models.filter((m: Model) => m.stage === "development").length,
+    staging: models.filter((m: Model) => m.stage === "staging").length,
+    production: models.filter((m: Model) => m.stage === "production").length,
+    archived: models.filter((m: Model) => m.stage === "archived").length,
   };
+
+  const handlePromote = async (id: string, stage: string) => {
+    try {
+      await promoteModel.mutateAsync({ id, stage });
+      toast({ title: "Success", description: `Model promoted to ${stage}` });
+      setMenuOpen(null);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to promote model", variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this model?")) return;
+    try {
+      await deleteModel.mutateAsync(id);
+      toast({ title: "Success", description: "Model deleted successfully" });
+      setMenuOpen(null);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete model", variant: "destructive" });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12 text-destructive">
+        Failed to load models. Please try again.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -230,7 +192,7 @@ export default function ModelRegistry() {
 
       {/* Model Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredModels.map((model) => {
+        {filteredModels.map((model: Model) => {
           const StageIcon = stageConfig[model.stage].icon;
           return (
             <Card
@@ -245,9 +207,50 @@ export default function ModelRegistry() {
                       {model.name}
                     </CardTitle>
                   </div>
-                  <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded">
-                    <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setMenuOpen(menuOpen === model.id ? null : model.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
+                    >
+                      <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                    {menuOpen === model.id && (
+                      <div className="absolute right-0 top-8 z-10 w-48 rounded-md border border-border bg-popover p-1 shadow-md">
+                        {model.stage !== "production" && (
+                          <button
+                            onClick={() => handlePromote(model.id, "production")}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded hover:bg-muted"
+                          >
+                            <ArrowUpCircle className="h-4 w-4 text-green-500" />
+                            Promote to Production
+                          </button>
+                        )}
+                        {model.stage !== "staging" && model.stage !== "production" && (
+                          <button
+                            onClick={() => handlePromote(model.id, "staging")}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded hover:bg-muted"
+                          >
+                            <ArrowUpCircle className="h-4 w-4 text-yellow-500" />
+                            Promote to Staging
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handlePromote(model.id, "archived")}
+                          className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded hover:bg-muted"
+                        >
+                          <Archive className="h-4 w-4" />
+                          Archive
+                        </button>
+                        <button
+                          onClick={() => handleDelete(model.id)}
+                          className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded hover:bg-destructive/10 text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <Badge variant="outline" className={stageConfig[model.stage].color}>
@@ -266,27 +269,27 @@ export default function ModelRegistry() {
 
                 {/* Metrics */}
                 <div className="grid grid-cols-3 gap-2 p-3 bg-muted/30 rounded-lg">
-                  {model.metrics.accuracy && (
+                  {model.accuracy && (
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground">Accuracy</p>
                       <p className="font-mono font-semibold text-green-500">
-                        {(model.metrics.accuracy * 100).toFixed(1)}%
+                        {(model.accuracy * 100).toFixed(1)}%
                       </p>
                     </div>
                   )}
-                  {model.metrics.f1Score && (
+                  {model.f1Score && (
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground">F1 Score</p>
                       <p className="font-mono font-semibold">
-                        {model.metrics.f1Score.toFixed(3)}
+                        {model.f1Score.toFixed(3)}
                       </p>
                     </div>
                   )}
-                  {model.metrics.latency && (
+                  {model.latency && (
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground">Latency</p>
                       <p className="font-mono font-semibold">
-                        {model.metrics.latency}ms
+                        {model.latency}ms
                       </p>
                     </div>
                   )}
@@ -294,7 +297,7 @@ export default function ModelRegistry() {
 
                 {/* Tags */}
                 <div className="flex flex-wrap gap-1">
-                  {model.tags.map((tag) => (
+                  {(model.tags as string[])?.map((tag: string) => (
                     <span
                       key={tag}
                       className="px-2 py-0.5 text-xs bg-accent/10 text-accent rounded-full"
@@ -308,7 +311,7 @@ export default function ModelRegistry() {
                 <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {model.lastUpdated}
+                    {new Date(model.updatedAt).toLocaleDateString()}
                   </span>
                   <span>{model.framework}</span>
                 </div>
@@ -330,4 +333,3 @@ export default function ModelRegistry() {
     </div>
   );
 }
-
