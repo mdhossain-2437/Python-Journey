@@ -128,18 +128,68 @@ export default function Simulator() {
   const training = useTrainingSimulator(trainingConfig);
 
   // Neural network architecture
-  const [layers, setLayers] = useState([784, 256, 128, 64, 10]);
+  const [layers] = useState([784, 128, 64, 32, 10]);
 
-  // Sample activations for visualization
+  // Seeded random for consistent values
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed * 9999) * 10000;
+    return x - Math.floor(x);
+  };
+
+  // Real-time activations based on training progress
   const activations = useMemo(() => {
-    if (training.history.length === 0) return undefined;
+    const progress = training.currentEpoch / trainingConfig.epochs;
+    const isTraining = training.isRunning;
+
+    return layers.map((count, layerIdx) => {
+      const neuronsToShow = Math.min(count, 8);
+      return Array(neuronsToShow).fill(null).map((_, neuronIdx) => {
+        // Base activation from seeded random
+        const baseValue = seededRandom(layerIdx * 100 + neuronIdx * 10 + training.currentEpoch);
+
+        // Input layer: stable positive activations
+        if (layerIdx === 0) {
+          return 0.3 + baseValue * 0.4;
+        }
+
+        // Output layer: becomes more confident (higher activation for one class) as training progresses
+        if (layerIdx === layers.length - 1) {
+          const targetClass = Math.floor(seededRandom(training.currentEpoch) * neuronsToShow);
+          if (neuronIdx === targetClass) {
+            return 0.3 + progress * 0.7; // Winner neuron gets stronger
+          }
+          return (1 - progress) * 0.3 * baseValue; // Others get weaker
+        }
+
+        // Hidden layers: activity increases with training
+        const layerDepth = layerIdx / (layers.length - 1);
+        const activityLevel = 0.2 + progress * 0.6;
+        return (baseValue - 0.5) * 2 * activityLevel * (1 - layerDepth * 0.3);
+      });
+    });
+  }, [training.currentEpoch, training.isRunning, layers, trainingConfig.epochs]);
+
+  // Real-time weights based on training
+  const weights = useMemo(() => {
     const progress = training.currentEpoch / trainingConfig.epochs;
 
-    return layers.map((count, l) =>
-      Array(Math.min(count, 20)).fill(null).map(() =>
-        (Math.random() - 0.5) * 2 * (l === layers.length - 1 ? 1 : 0.5 + progress * 0.5)
-      )
-    );
+    return layers.slice(0, -1).map((fromCount, layerIdx) => {
+      const toCount = layers[layerIdx + 1];
+      const fromNeurons = Math.min(fromCount, 8);
+      const toNeurons = Math.min(toCount, 8);
+
+      return Array(fromNeurons).fill(null).map((_, i) =>
+        Array(toNeurons).fill(null).map((_, j) => {
+          // Weights become more sparse and stronger as training progresses
+          const baseWeight = seededRandom(layerIdx * 1000 + i * 100 + j);
+          const sparsity = progress * 0.5;
+          if (baseWeight < sparsity) {
+            return 0; // Pruned connection
+          }
+          return (baseWeight - 0.5) * 2 * (0.5 + progress * 0.5);
+        })
+      );
+    });
   }, [training.currentEpoch, layers, trainingConfig.epochs]);
 
   // Chart data
@@ -345,18 +395,24 @@ export default function Simulator() {
 
         {/* Neural Network Tab */}
         <TabsContent value="neural" className="mt-4 space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+          <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
             <Card className="border-border">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Network Architecture</CardTitle>
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>Network Architecture</span>
+                  <Badge variant={training.isRunning ? "default" : "secondary"}>
+                    {training.isRunning ? "Training..." : "Idle"}
+                  </Badge>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <NeuralNetworkVisualizer
                   layers={layers}
+                  weights={weights}
                   activations={activations}
-                  layerNames={["Input", "Hidden 1", "Hidden 2", "Hidden 3", "Output"]}
+                  layerNames={["Input (784)", "Hidden (128)", "Hidden (64)", "Hidden (32)", "Output (10)"]}
                   animated={training.isRunning}
-                  maxHeight={280}
+                  height={380}
                 />
               </CardContent>
             </Card>
@@ -375,7 +431,7 @@ export default function Simulator() {
           {training.currentEpoch > 10 && (
             <Card className="border-border">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Confusion Matrix</CardTitle>
+                <CardTitle className="text-base">Confusion Matrix (Epoch {training.currentEpoch})</CardTitle>
               </CardHeader>
               <CardContent>
                 <Heatmap
@@ -383,7 +439,7 @@ export default function Simulator() {
                   xLabels={Array.from({ length: 10 }, (_, i) => `${i}`)}
                   yLabels={Array.from({ length: 10 }, (_, i) => `${i}`)}
                   colorScale="viridis"
-                  height={250}
+                  height={280}
                 />
               </CardContent>
             </Card>
@@ -574,7 +630,7 @@ export default function Simulator() {
                 nodes={dagNodes}
                 edges={dagEdges}
                 selectedNodeId={training.isRunning ? "train" : undefined}
-                maxHeight={280}
+                height={220}
               />
             </CardContent>
           </Card>
