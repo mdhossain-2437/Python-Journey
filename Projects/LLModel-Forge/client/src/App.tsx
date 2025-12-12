@@ -11,6 +11,9 @@ import Pipelines from "@/pages/pipelines";
 import Settings from "@/pages/settings";
 import Alerts from "@/pages/alerts";
 import Monitoring from "@/pages/monitoring";
+import ABTestingPage from "@/pages/ab-testing";
+import AutoRetrainPage from "@/pages/auto-retrain";
+import ExplainabilityPage from "@/pages/explainability";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import NotFound from "@/pages/not-found";
@@ -88,6 +91,9 @@ function AppLayout() {
                   <Route path="/pipelines" component={Pipelines} />
                   <Route path="/alerts" component={Alerts} />
                   <Route path="/monitoring" component={Monitoring} />
+                  <Route path="/ab-testing" component={ABTestingPage} />
+                  <Route path="/auto-retrain" component={AutoRetrainPage} />
+                  <Route path="/explainability" component={ExplainabilityPage} />
                   <Route path="/settings" component={Settings} />
                   <Route component={NotFound} />
                 </Switch>
