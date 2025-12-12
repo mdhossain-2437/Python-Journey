@@ -3,54 +3,67 @@
 
 class SecureStorage {
   private memoryStorage: Map<string, string> = new Map();
-  private isLocalStorageAvailable: boolean = false;
-  private hasChecked: boolean = false;
+  private storageAvailable: boolean | null = null;
 
-  private checkLocalStorageAvailability(): boolean {
-    if (this.hasChecked) {
-      return this.isLocalStorageAvailable;
+  private isStorageAvailable(): boolean {
+    // Return cached result
+    if (this.storageAvailable !== null) {
+      return this.storageAvailable;
     }
 
-    this.hasChecked = true;
+    // Check if window and localStorage exist
+    if (typeof window === 'undefined') {
+      this.storageAvailable = false;
+      return false;
+    }
 
     try {
-      // Check if we're in a context where localStorage is available
-      if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-        return false;
-      }
-
-      const testKey = '__llmf_storage_test__';
-      localStorage.setItem(testKey, testKey);
-      localStorage.removeItem(testKey);
-      this.isLocalStorageAvailable = true;
+      const storage = window.localStorage;
+      const testKey = '__llmf_test__';
+      storage.setItem(testKey, 'test');
+      storage.removeItem(testKey);
+      this.storageAvailable = true;
       return true;
     } catch (e) {
-      // localStorage is not available (private browsing, iframe restrictions, etc.)
-      this.isLocalStorageAvailable = false;
+      // Storage not available (private mode, iframe, etc.)
+      this.storageAvailable = false;
       return false;
     }
   }
 
   getItem(key: string): string | null {
-    if (this.checkLocalStorageAvailability()) {
+    // Try memory first
+    const memValue = this.memoryStorage.get(key);
+    if (memValue !== undefined) {
+      return memValue;
+    }
+
+    // Try localStorage if available
+    if (this.isStorageAvailable()) {
       try {
-        return localStorage.getItem(key);
+        const value = window.localStorage.getItem(key);
+        if (value !== null) {
+          // Cache in memory
+          this.memoryStorage.set(key, value);
+        }
+        return value;
       } catch {
-        return this.memoryStorage.get(key) || null;
+        // Silent fail
       }
     }
-    return this.memoryStorage.get(key) || null;
+    return null;
   }
 
   setItem(key: string, value: string): void {
-    // Always store in memory as backup
+    // Always store in memory
     this.memoryStorage.set(key, value);
 
-    if (this.checkLocalStorageAvailability()) {
+    // Also try localStorage
+    if (this.isStorageAvailable()) {
       try {
-        localStorage.setItem(key, value);
+        window.localStorage.setItem(key, value);
       } catch {
-        // Silently fail - data is in memory storage
+        // Silent fail - data is in memory
       }
     }
   }
@@ -58,11 +71,11 @@ class SecureStorage {
   removeItem(key: string): void {
     this.memoryStorage.delete(key);
 
-    if (this.checkLocalStorageAvailability()) {
+    if (this.isStorageAvailable()) {
       try {
-        localStorage.removeItem(key);
+        window.localStorage.removeItem(key);
       } catch {
-        // Silently fail
+        // Silent fail
       }
     }
   }
@@ -70,18 +83,13 @@ class SecureStorage {
   clear(): void {
     this.memoryStorage.clear();
 
-    if (this.checkLocalStorageAvailability()) {
+    if (this.isStorageAvailable()) {
       try {
-        localStorage.clear();
+        window.localStorage.clear();
       } catch {
-        // Silently fail
+        // Silent fail
       }
     }
-  }
-
-  // Check if persistent storage is available
-  isPersistent(): boolean {
-    return this.checkLocalStorageAvailability();
   }
 }
 
