@@ -592,7 +592,7 @@ export function RealTimeMetricStream({
 
 // ==================== PHYSICS SIMULATION VISUALIZATION ====================
 
-interface Particle {
+export interface Particle {
   id: string;
   x: number;
   y: number;
@@ -625,7 +625,7 @@ export function PhysicsVisualization({
   className,
 }: PhysicsVisualizationProps) {
   const [particles, setParticles] = useState(initialParticles);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!running) {

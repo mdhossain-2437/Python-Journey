@@ -313,16 +313,10 @@ export const Optimizers = {
     const mHat = newM.scale(1 / (1 - Math.pow(beta1, t)));
     const vHat = newV.scale(1 / (1 - Math.pow(beta2, t)));
 
-    // Compute update
-    const update = mHat.map((m, i) => {
-      // This is simplified - in practice you'd iterate properly
-      return m;
-    });
-
-    const denom = vHat.map(v => Math.sqrt(v) + epsilon);
+    // Compute final update: -lr * mHat / (sqrt(vHat) + epsilon)
     const finalUpdate = new Matrix(
-      mHat.data.map((row, i) =>
-        row.map((m, j) => -lr * m / (Math.sqrt(vHat.data[i][j]) + epsilon))
+      mHat.data.map((row: number[], i: number) =>
+        row.map((mVal: number, j: number) => -lr * mVal / (Math.sqrt(vHat.data[i][j]) + epsilon))
       )
     );
 

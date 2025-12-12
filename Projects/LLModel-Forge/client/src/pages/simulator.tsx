@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 
 // Components
 import { NeuralNetworkVisualizer, DAGGraph, ModelArchitectureBuilder, DAGNode, DAGEdge } from "@/components/neural-network-viz";
-import { AdvancedScatterPlot, Heatmap, RealTimeMetricStream, PhysicsVisualization } from "@/components/advanced-viz";
+import { AdvancedScatterPlot, Heatmap, RealTimeMetricStream, PhysicsVisualization, Particle } from "@/components/advanced-viz";
 import { MetricChart, SmoothingSlider, getRunColor } from "@/components/wandb-ui";
 import { QuantumSimulator, BlochSphere, QuantumStateVisualizer } from "@/components/quantum-viz";
 import { Matrix, Activations, LossFunctions, Statistics, Metrics, LRSchedulers, Complex } from "@/lib/ml-math";
@@ -188,8 +188,9 @@ export default function Simulator() {
     }).flat();
   }, [training.currentEpoch, trainingConfig.epochs]);
 
+
   // Physics particles (gradient descent visualization)
-  const [particles, setParticles] = useState(() =>
+  const [particles, setParticles] = useState<Particle[]>(() =>
     Array.from({ length: 15 }, (_, i) => ({
       id: `p${i}`,
       x: 100 + Math.random() * 400,
@@ -346,8 +347,8 @@ export default function Simulator() {
         <TabsContent value="neural" className="mt-4 space-y-4">
           <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
             <Card className="border-border">
-              <CardHeader>
-                <CardTitle>Network Architecture</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Network Architecture</CardTitle>
               </CardHeader>
               <CardContent>
                 <NeuralNetworkVisualizer
@@ -355,13 +356,14 @@ export default function Simulator() {
                   activations={activations}
                   layerNames={["Input", "Hidden 1", "Hidden 2", "Hidden 3", "Output"]}
                   animated={training.isRunning}
+                  maxHeight={280}
                 />
               </CardContent>
             </Card>
 
             <Card className="border-border">
-              <CardHeader>
-                <CardTitle>Layer Configuration</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Layer Configuration</CardTitle>
               </CardHeader>
               <CardContent>
                 <ModelArchitectureBuilder layers={modelLayers} readOnly />
@@ -372,16 +374,16 @@ export default function Simulator() {
           {/* Confusion Matrix */}
           {training.currentEpoch > 10 && (
             <Card className="border-border">
-              <CardHeader>
-                <CardTitle>Confusion Matrix</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Confusion Matrix</CardTitle>
               </CardHeader>
               <CardContent>
                 <Heatmap
                   data={confusionMatrix}
-                  xLabels={Array.from({ length: 10 }, (_, i) => `Pred ${i}`)}
-                  yLabels={Array.from({ length: 10 }, (_, i) => `True ${i}`)}
+                  xLabels={Array.from({ length: 10 }, (_, i) => `${i}`)}
+                  yLabels={Array.from({ length: 10 }, (_, i) => `${i}`)}
                   colorScale="viridis"
-                  height={300}
+                  height={250}
                 />
               </CardContent>
             </Card>
@@ -455,8 +457,8 @@ export default function Simulator() {
         {/* Embeddings Tab */}
         <TabsContent value="embeddings" className="mt-4">
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>t-SNE Embedding Visualization</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">t-SNE Embedding Visualization</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Watch how class clusters form as training progresses
               </p>
@@ -467,7 +469,7 @@ export default function Simulator() {
                 xLabel="Dimension 1"
                 yLabel="Dimension 2"
                 showRegression={false}
-                height={500}
+                height={350}
               />
             </CardContent>
           </Card>
@@ -492,17 +494,17 @@ export default function Simulator() {
         <TabsContent value="physics" className="mt-4 space-y-4">
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="border-border">
-              <CardHeader>
-                <CardTitle>Gradient Descent Visualization</CardTitle>
-                <p className="text-sm text-muted-foreground">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Gradient Descent Visualization</CardTitle>
+                <p className="text-xs text-muted-foreground">
                   Parameters navigating the loss landscape
                 </p>
               </CardHeader>
               <CardContent>
                 <PhysicsVisualization
                   particles={particles}
-                  width={400}
-                  height={300}
+                  width={350}
+                  height={220}
                   gravity={0.05}
                   friction={0.98}
                   running={training.isRunning}
@@ -512,8 +514,8 @@ export default function Simulator() {
             </Card>
 
             <Card className="border-border">
-              <CardHeader>
-                <CardTitle>Loss Landscape Cross-Section</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Loss Landscape Cross-Section</CardTitle>
               </CardHeader>
               <CardContent>
                 <AdvancedScatterPlot
@@ -530,15 +532,15 @@ export default function Simulator() {
                   xLabel="Parameter θ"
                   yLabel="Loss L(θ)"
                   showRegression={false}
-                  height={300}
+                  height={220}
                 />
               </CardContent>
             </Card>
           </div>
 
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Optimizer Trajectory Comparison</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Optimizer Trajectory Comparison</CardTitle>
             </CardHeader>
             <CardContent>
               <Heatmap
@@ -552,7 +554,7 @@ export default function Simulator() {
                 colorScale="plasma"
                 title="2D Loss Surface"
                 showValues={false}
-                height={400}
+                height={280}
               />
             </CardContent>
           </Card>
@@ -561,9 +563,9 @@ export default function Simulator() {
         {/* Lineage Tab */}
         <TabsContent value="lineage" className="mt-4">
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Model Lineage & Artifacts</CardTitle>
-              <p className="text-sm text-muted-foreground">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Model Lineage & Artifacts</CardTitle>
+              <p className="text-xs text-muted-foreground">
                 Track data flow and model versions
               </p>
             </CardHeader>
@@ -572,6 +574,7 @@ export default function Simulator() {
                 nodes={dagNodes}
                 edges={dagEdges}
                 selectedNodeId={training.isRunning ? "train" : undefined}
+                maxHeight={280}
               />
             </CardContent>
           </Card>

@@ -131,6 +131,7 @@ interface NeuralNetworkVisualizerProps {
   activations?: number[][]; // activations[layer][neuron]
   layerNames?: string[];
   animated?: boolean;
+  maxHeight?: number; // Maximum height in pixels
   className?: string;
 }
 
@@ -140,26 +141,28 @@ export function NeuralNetworkVisualizer({
   activations,
   layerNames,
   animated = false,
+  maxHeight = 350, // Default max height
   className,
 }: NeuralNetworkVisualizerProps) {
   const [zoom, setZoom] = useState(1);
   const [hoveredNeuron, setHoveredNeuron] = useState<any>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Calculate layout
+  // Calculate layout with controlled height
   const layout = useMemo(() => {
-    const maxNeurons = Math.max(...layers);
-    const padding = 60;
-    const width = 800;
-    const height = Math.max(400, maxNeurons * 30 + padding * 2);
+    const maxNeuronsToShow = 12; // Limit neurons shown per layer
+    const padding = 40;
+    const width = 700;
+    // Cap the height to maxHeight
+    const height = Math.min(maxHeight, Math.max(250, Math.min(...layers, maxNeuronsToShow) * 25 + padding * 2));
     const layerSpacing = (width - padding * 2) / (layers.length - 1);
-    const neuronRadius = Math.min(15, 200 / maxNeurons);
+    const neuronRadius = Math.min(12, 150 / Math.min(...layers, maxNeuronsToShow));
 
     const positions: Array<Array<{ x: number; y: number }>> = [];
 
     for (let l = 0; l < layers.length; l++) {
       const layerPositions: Array<{ x: number; y: number }> = [];
-      const numNeurons = Math.min(layers[l], 20); // Limit displayed neurons
+      const numNeurons = Math.min(layers[l], maxNeuronsToShow); // Limit displayed neurons
       const neuronSpacing = (height - padding * 2) / (numNeurons + 1);
 
       for (let n = 0; n < numNeurons; n++) {
@@ -170,7 +173,7 @@ export function NeuralNetworkVisualizer({
       }
 
       // Add indicator for hidden neurons
-      if (layers[l] > 20) {
+      if (layers[l] > maxNeuronsToShow) {
         layerPositions.push({
           x: padding + l * layerSpacing,
           y: height / 2,
@@ -181,7 +184,7 @@ export function NeuralNetworkVisualizer({
     }
 
     return { positions, width, height, neuronRadius, padding };
-  }, [layers]);
+  }, [layers, maxHeight]);
 
   // Generate random weights if not provided
   const displayWeights = useMemo(() => {
@@ -370,10 +373,11 @@ interface DAGGraphProps {
   edges: DAGEdge[];
   onNodeClick?: (node: DAGNode) => void;
   selectedNodeId?: string;
+  maxHeight?: number;
   className?: string;
 }
 
-export function DAGGraph({ nodes, edges, onNodeClick, selectedNodeId, className }: DAGGraphProps) {
+export function DAGGraph({ nodes, edges, onNodeClick, selectedNodeId, maxHeight = 300, className }: DAGGraphProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
@@ -426,15 +430,17 @@ export function DAGGraph({ nodes, edges, onNodeClick, selectedNodeId, className 
     const remaining = nodes.filter(n => !visited.has(n.id)).map(n => n.id);
     if (remaining.length > 0) layers.push(remaining);
 
-    // Calculate positions
-    const nodeWidth = 160;
-    const nodeHeight = 60;
-    const layerSpacing = 200;
-    const nodeSpacing = 100;
-    const padding = 50;
+    // Calculate positions with controlled sizing
+    const nodeWidth = 140;
+    const nodeHeight = 50;
+    const layerSpacing = 170;
+    const nodeSpacing = 70;
+    const padding = 40;
 
     const positions: Record<string, { x: number; y: number }> = {};
-    const height = Math.max(...layers.map(l => l.length)) * nodeSpacing + padding * 2;
+    // Cap the height
+    const calculatedHeight = Math.max(...layers.map(l => l.length)) * nodeSpacing + padding * 2;
+    const height = Math.min(maxHeight, calculatedHeight);
 
     layers.forEach((layer, layerIndex) => {
       const layerHeight = layer.length * nodeSpacing;
@@ -451,7 +457,7 @@ export function DAGGraph({ nodes, edges, onNodeClick, selectedNodeId, className 
     const width = layers.length * layerSpacing + padding * 2;
 
     return { positions, width, height, nodeWidth, nodeHeight };
-  }, [nodes, edges]);
+  }, [nodes, edges, maxHeight]);
 
   // Get icon for node type
   const getNodeIcon = (type: DAGNode["type"]) => {
