@@ -4,16 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Search,
-  Filter,
   Plus,
   Box,
   Clock,
   GitBranch,
-  Download,
   MoreVertical,
-  CheckCircle2,
   AlertTriangle,
-  XCircle,
   Rocket,
   Archive
 } from "lucide-react";

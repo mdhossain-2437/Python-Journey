@@ -7,13 +7,15 @@ import {
   Calculator, 
   Settings,
   Activity,
-  Box
+  Box,
+  Workflow
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Model Registry", href: "/model-registry", icon: Box },
+  { name: "Pipelines", href: "/pipelines", icon: Workflow },
   { name: "Feature Store", href: "/feature-store", icon: Database },
   { name: "Experiments", href: "/experiments", icon: TestTube2 },
   { name: "Data Labeling", href: "/labeling", icon: Tag },
