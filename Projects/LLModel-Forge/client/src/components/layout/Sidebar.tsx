@@ -20,6 +20,7 @@ const navigation = [
   { name: "Experiments", href: "/experiments", icon: TestTube2 },
   { name: "Data Labeling", href: "/labeling", icon: Tag },
   { name: "Score Simulator", href: "/simulator", icon: Calculator },
+  { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {

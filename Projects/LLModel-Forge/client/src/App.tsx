@@ -7,6 +7,7 @@ import Labeling from "@/pages/labeling";
 import Simulator from "@/pages/simulator";
 import ModelRegistry from "@/pages/model-registry";
 import Pipelines from "@/pages/pipelines";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -24,6 +25,7 @@ function App() {
             <Route path="/simulator" component={Simulator} />
             <Route path="/model-registry" component={ModelRegistry} />
             <Route path="/pipelines" component={Pipelines} />
+            <Route path="/settings" component={Settings} />
             <Route component={NotFound} />
           </Switch>
         </div>
