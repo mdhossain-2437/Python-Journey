@@ -1,9 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
-import { Activity, Server, Users, Zap, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Activity, Server, Zap, AlertTriangle, Loader2, Bell } from "lucide-react";
+import { useDashboardStats, useAlerts, useMarkAlertRead } from "@/hooks/use-api";
+import { useAuth } from "@/hooks/use-auth";
 import generatedImage from '@assets/generated_images/dark_abstract_neural_network_background.png';
 
-const data = [
+const chartData = [
   { time: "00:00", requests: 4000, latency: 240 },
   { time: "04:00", requests: 3000, latency: 139 },
   { time: "08:00", requests: 2000, latency: 980 },
@@ -13,39 +15,54 @@ const data = [
   { time: "24:00", requests: 3490, latency: 430 },
 ];
 
-const stats = [
-  {
-    title: "Active Models",
-    value: "12",
-    change: "+2.5%",
-    icon: Server,
-    trend: "up",
-  },
-  {
-    title: "Total Predictions",
-    value: "1.2M",
-    change: "+14%",
-    icon: Zap,
-    trend: "up",
-  },
-  {
-    title: "Avg Latency",
-    value: "45ms",
-    change: "-1.2%",
-    icon: Activity,
-    trend: "down", // Good for latency
-  },
-  {
-    title: "Data Drift",
-    value: "0.03",
-    change: "+0.01",
-    icon: AlertTriangle,
-    trend: "up", // Bad
-    alert: true,
-  },
-];
-
 export default function Dashboard() {
+  const { user } = useAuth();
+  const { data: stats, isLoading } = useDashboardStats();
+  const { data: alerts = [] } = useAlerts();
+  const markRead = useMarkAlertRead();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const dashboardStats = [
+    {
+      title: "Active Models",
+      value: stats?.activeModels || 0,
+      change: "+2.5%",
+      icon: Server,
+      trend: "up",
+    },
+    {
+      title: "Total Predictions",
+      value: stats?.totalPredictions || 0,
+      change: "+14%",
+      icon: Zap,
+      trend: "up",
+    },
+    {
+      title: "Avg Latency",
+      value: `${stats?.avgLatency || 0}ms`,
+      change: "-1.2%",
+      icon: Activity,
+      trend: "down",
+    },
+    {
+      title: "Unread Alerts",
+      value: stats?.unreadAlerts || 0,
+      change: stats?.unreadAlerts > 0 ? "Needs attention" : "All clear",
+      icon: AlertTriangle,
+      trend: stats?.unreadAlerts > 0 ? "up" : "down",
+      alert: stats?.unreadAlerts > 0,
+    },
+  ];
+
+  const unreadAlerts = alerts.filter(a => !a.isRead).slice(0, 5);
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between">
@@ -71,10 +88,12 @@ export default function Dashboard() {
            <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent" />
         </div>
         <div className="relative z-10 p-8">
-          <h2 className="text-2xl font-bold text-white mb-2">Welcome back, Engineer</h2>
+          <h2 className="text-2xl font-bold text-white mb-2">Welcome back, {user?.name || 'Engineer'}</h2>
           <p className="text-muted-foreground max-w-xl mb-6">
             Your production models are performing within expected parameters. 
-            There are 3 simulations pending review and 1 data drift alert requiring attention.
+            {stats?.unreadAlerts > 0
+              ? ` You have ${stats.unreadAlerts} unread alert(s) requiring attention.`
+              : ' All systems operational.'}
           </p>
           <div className="flex gap-4">
             <button className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-md text-sm font-medium transition-colors">
@@ -88,7 +107,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
+        {dashboardStats.map((stat) => (
           <Card key={stat.title} className="border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -99,105 +118,82 @@ export default function Dashboard() {
             <CardContent>
               <div className="text-2xl font-bold font-mono">{stat.value}</div>
               <p className={`text-xs ${
-                stat.alert ? "text-destructive" : "text-primary"
-              } mt-1`}>
-                {stat.change} from last month
+                stat.alert ? "text-destructive" : 
+                stat.trend === "up" ? "text-green-500" : "text-green-500"
+              }`}>
+                {stat.change}
               </p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4 border-border/50 bg-card/50">
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Chart */}
+        <Card className="lg:col-span-2 border-border bg-card">
           <CardHeader>
-            <CardTitle>Inference Volume & Latency</CardTitle>
+            <CardTitle className="font-semibold">Inference Volume</CardTitle>
           </CardHeader>
-          <CardContent className="pl-2">
-            <div className="h-[300px] w-full">
+          <CardContent>
+            <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data}>
+                <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
                       <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
                     </linearGradient>
-                    <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0}/>
-                    </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                  <XAxis 
-                    dataKey="time" 
-                    stroke="hsl(var(--muted-foreground))" 
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    stroke="hsl(var(--muted-foreground))" 
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => `${value}`}
-                  />
-                  <Tooltip 
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <Tooltip
                     contentStyle={{ 
-                      backgroundColor: "hsl(var(--popover))", 
-                      borderColor: "hsl(var(--border))",
-                      color: "hsl(var(--popover-foreground))"
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
                     }}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="requests" 
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorRequests)" 
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="latency" 
-                    stroke="hsl(var(--accent))" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorLatency)" 
-                  />
+                  <Area type="monotone" dataKey="requests" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorRequests)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
-        
-        <Card className="col-span-3 border-border/50 bg-card/50">
+
+        {/* Alerts */}
+        <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle>Recent Deployment Activity</CardTitle>
+            <CardTitle className="font-semibold flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Recent Alerts
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-8">
-              {[
-                { model: "Fraud_Detection_v2", action: "Deployed to Prod", time: "2h ago", status: "success" },
-                { model: "RecSys_Core_v5", action: "Training Completed", time: "5h ago", status: "success" },
-                { model: "Churn_Predictor_v1", action: "Validation Failed", time: "8h ago", status: "failed" },
-                { model: "NLP_Sentiment_v3", action: "Drift Detected", time: "1d ago", status: "warning" },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center">
-                  <div className={`mr-4 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background`}>
-                    {item.status === 'success' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                    {item.status === 'failed' && <AlertTriangle className="h-5 w-5 text-destructive" />}
-                    {item.status === 'warning' && <AlertTriangle className="h-5 w-5 text-yellow-500" />}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium leading-none text-foreground">{item.model}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.action} • {item.time}
+          <CardContent className="space-y-3">
+            {unreadAlerts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No unread alerts
+              </p>
+            ) : (
+              unreadAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => markRead.mutate(alert.id)}
+                >
+                  <div className={`h-2 w-2 rounded-full mt-2 ${
+                    alert.severity === 'warning' ? 'bg-yellow-500' : 
+                    alert.severity === 'error' ? 'bg-red-500' : 'bg-blue-500'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">{alert.message}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(alert.createdAt).toLocaleString()}
                     </p>
                   </div>
                 </div>
-              ))}
-            </div>
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
