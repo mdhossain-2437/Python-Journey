@@ -9,18 +9,8 @@ const API_CACHE = 'llmodel-forge-api-v1';
 // Resources to cache immediately
 const STATIC_ASSETS = [
   '/',
-  '/index.html',
   '/manifest.json',
   '/favicon.png',
-];
-
-// API routes to cache
-const API_ROUTES = [
-  '/api/models',
-  '/api/experiments',
-  '/api/pipelines',
-  '/api/features',
-  '/api/dashboard/stats',
 ];
 
 // Install event - cache static assets
@@ -28,10 +18,16 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
 
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      console.log('[SW] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(STATIC_CACHE)
+      .then((cache) => {
+        console.log('[SW] Caching static assets');
+        return cache.addAll(STATIC_ASSETS).catch((err) => {
+          console.log('[SW] Cache addAll failed:', err);
+        });
+      })
+      .catch((err) => {
+        console.log('[SW] Cache open failed:', err);
+      })
   );
 
   // Activate immediately
@@ -43,16 +39,20 @@ self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
 
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys
-          .filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== API_CACHE)
-          .map((key) => {
-            console.log('[SW] Deleting old cache:', key);
-            return caches.delete(key);
-          })
-      );
-    })
+    caches.keys()
+      .then((keys) => {
+        return Promise.all(
+          keys
+            .filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== API_CACHE)
+            .map((key) => {
+              console.log('[SW] Deleting old cache:', key);
+              return caches.delete(key);
+            })
+        );
+      })
+      .catch((err) => {
+        console.log('[SW] Cache cleanup failed:', err);
+      })
   );
 
   // Claim all clients
