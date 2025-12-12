@@ -10,7 +10,9 @@ import {
   Activity,
   Box,
   Workflow,
-  LogOut
+  LogOut,
+  Bell,
+  BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +24,8 @@ const navigation = [
   { name: "Experiments", href: "/experiments", icon: TestTube2 },
   { name: "Data Labeling", href: "/labeling", icon: Tag },
   { name: "Score Simulator", href: "/simulator", icon: Calculator },
+  { name: "Monitoring", href: "/monitoring", icon: BarChart3 },
+  { name: "Alerts", href: "/alerts", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

@@ -9,6 +9,8 @@ import Simulator from "@/pages/simulator";
 import ModelRegistry from "@/pages/model-registry";
 import Pipelines from "@/pages/pipelines";
 import Settings from "@/pages/settings";
+import Alerts from "@/pages/alerts";
+import Monitoring from "@/pages/monitoring";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import NotFound from "@/pages/not-found";
@@ -84,6 +86,8 @@ function AppLayout() {
                   <Route path="/simulator" component={Simulator} />
                   <Route path="/model-registry" component={ModelRegistry} />
                   <Route path="/pipelines" component={Pipelines} />
+                  <Route path="/alerts" component={Alerts} />
+                  <Route path="/monitoring" component={Monitoring} />
                   <Route path="/settings" component={Settings} />
                   <Route component={NotFound} />
                 </Switch>
