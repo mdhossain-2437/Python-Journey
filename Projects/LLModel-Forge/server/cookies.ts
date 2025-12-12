@@ -168,7 +168,7 @@ export function generateCSRFToken(): string {
 /**
  * CSRF Validation Middleware
  */
-export function validateCSRF(req: Request, res: Response, next: Function): void {
+export function validateCSRF(req: Request, res: Response, next: Function) {
   // Skip for GET, HEAD, OPTIONS
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
     return next();
@@ -184,7 +184,8 @@ export function validateCSRF(req: Request, res: Response, next: Function): void 
   const headerToken = req.headers["x-csrf-token"] as string;
 
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
-    return res.status(403).json({ error: "Invalid CSRF token" });
+    res.status(403).json({ error: "Invalid CSRF token" });
+    return;
   }
 
   next();

@@ -202,7 +202,8 @@ class IntelligentCache {
     const regex = new RegExp(pattern.replace(/\*/g, ".*"));
     let count = 0;
 
-    for (const key of this.cache.keys()) {
+    const keys = Array.from(this.cache.keys());
+    for (const key of keys) {
       if (regex.test(key)) {
         this.delete(key);
         count++;
@@ -220,7 +221,8 @@ class IntelligentCache {
     if (!keys) return 0;
 
     let count = 0;
-    for (const key of keys) {
+    const keyArray = Array.from(keys);
+    for (const key of keyArray) {
       if (this.delete(key)) count++;
     }
 
@@ -326,7 +328,8 @@ class IntelligentCache {
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
 
-    for (const [key, entry] of this.cache) {
+    const entries = Array.from(this.cache.entries());
+    for (const [key, entry] of entries) {
       // Weight by access count and recency
       const score = entry.lastAccessedAt - (entry.accessCount * 1000);
       if (score < oldestTime) {
@@ -345,7 +348,8 @@ class IntelligentCache {
     const now = Date.now();
     const keysToDelete: string[] = [];
 
-    for (const [key, entry] of this.cache) {
+    const entries = Array.from(this.cache.entries());
+    for (const [key, entry] of entries) {
       // Fully expired (past stale window)
       const staleBuffer = entry.stale ? DEFAULT_STALE_TTL : 0;
       if (now > entry.expiresAt + staleBuffer) {
