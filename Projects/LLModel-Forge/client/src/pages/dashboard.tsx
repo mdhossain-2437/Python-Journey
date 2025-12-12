@@ -29,6 +29,8 @@ export default function Dashboard() {
     );
   }
 
+  const unreadCount = stats?.unreadAlerts ?? 0;
+
   const dashboardStats = [
     {
       title: "Active Models",
@@ -53,11 +55,11 @@ export default function Dashboard() {
     },
     {
       title: "Unread Alerts",
-      value: stats?.unreadAlerts || 0,
-      change: stats?.unreadAlerts > 0 ? "Needs attention" : "All clear",
+      value: unreadCount,
+      change: unreadCount > 0 ? "Needs attention" : "All clear",
       icon: AlertTriangle,
-      trend: stats?.unreadAlerts > 0 ? "up" : "down",
-      alert: stats?.unreadAlerts > 0,
+      trend: unreadCount > 0 ? "up" : "down",
+      alert: unreadCount > 0,
     },
   ];
 
@@ -91,8 +93,8 @@ export default function Dashboard() {
           <h2 className="text-2xl font-bold text-white mb-2">Welcome back, {user?.name || 'Engineer'}</h2>
           <p className="text-muted-foreground max-w-xl mb-6">
             Your production models are performing within expected parameters. 
-            {stats?.unreadAlerts > 0
-              ? ` You have ${stats.unreadAlerts} unread alert(s) requiring attention.`
+            {unreadCount > 0
+              ? ` You have ${unreadCount} unread alert(s) requiring attention.`
               : ' All systems operational.'}
           </p>
           <div className="flex gap-4">
