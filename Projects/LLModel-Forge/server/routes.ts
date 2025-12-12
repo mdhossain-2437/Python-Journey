@@ -1,211 +1,682 @@
-import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Express, Request, Response } from "express";
+import { type Server } from "http";
+import cookieParser from "cookie-parser";
 import { storage } from "./storage";
-
-// Mock data for API endpoints
-const models = [
-  {
-    id: "model_001",
-    name: "fraud-detection-xgboost",
-    version: "3.2.1",
-    stage: "production",
-    framework: "XGBoost",
-    metrics: { accuracy: 0.956, f1Score: 0.942, latency: 12 },
-    author: "Jane Smith",
-    createdAt: "2024-01-15",
-    lastUpdated: "2024-02-10",
-    description: "Production fraud detection model for real-time transaction scoring",
-    tags: ["fraud", "real-time", "critical"]
-  },
-  {
-    id: "model_002",
-    name: "customer-churn-predictor",
-    version: "2.0.0",
-    stage: "staging",
-    framework: "LightGBM",
-    metrics: { accuracy: 0.891, f1Score: 0.876, latency: 8 },
-    author: "John Doe",
-    createdAt: "2024-02-01",
-    lastUpdated: "2024-02-12",
-    description: "Customer churn prediction model with SHAP explanations",
-    tags: ["churn", "customer-analytics"]
-  },
-  {
-    id: "model_003",
-    name: "sentiment-bert-large",
-    version: "1.5.0",
-    stage: "production",
-    framework: "PyTorch",
-    metrics: { accuracy: 0.923, f1Score: 0.918, latency: 45 },
-    author: "Alice Chen",
-    createdAt: "2023-12-20",
-    lastUpdated: "2024-01-28",
-    description: "BERT-based sentiment analysis for customer reviews",
-    tags: ["nlp", "sentiment", "bert"]
-  },
-];
-
-const experiments = [
-  { id: "exp_8921", name: "XGBoost_Optimized_v1", accuracy: 0.942, f1: 0.92, duration: "45m", status: "completed", date: "2024-02-10" },
-  { id: "exp_8922", name: "ResNet50_Transfer", accuracy: 0.885, f1: 0.86, duration: "2h 15m", status: "failed", date: "2024-02-11" },
-  { id: "exp_8923", name: "Bert_FineTune_Base", accuracy: 0.912, f1: 0.89, duration: "1h 20m", status: "completed", date: "2024-02-12" },
-  { id: "exp_8924", name: "XGBoost_Optimized_v2", accuracy: 0.956, f1: 0.94, duration: "50m", status: "running", date: "2024-02-13" },
-];
-
-const features = [
-  { id: "fs_001", name: "user_avg_session_duration", type: "float", entity: "user", status: "online", created: "2023-10-15" },
-  { id: "fs_002", name: "transaction_count_7d", type: "integer", entity: "transaction", status: "online", created: "2023-10-20" },
-  { id: "fs_003", name: "device_fingerprint_embedding", type: "vector<768>", entity: "device", status: "offline", created: "2023-11-01" },
-  { id: "fs_004", name: "last_login_geo", type: "geopoint", entity: "user", status: "online", created: "2023-11-05" },
-  { id: "fs_005", name: "product_category_affinity", type: "json", entity: "user", status: "archived", created: "2023-09-12" },
-];
-
-const dashboardStats = {
-  activeModels: 12,
-  totalPredictions: "1.2M",
-  avgLatency: "45ms",
-  dataDrift: 0.03,
-  systemStatus: "operational",
-  alerts: [
-    { id: 1, type: "warning", message: "Data drift detected in fraud-detection model", timestamp: "2024-02-13T10:30:00Z" },
-    { id: 2, type: "info", message: "New model version available for sentiment-bert", timestamp: "2024-02-13T09:15:00Z" },
-  ]
-};
+import {
+  authMiddleware,
+  optionalAuth,
+  generateToken,
+  comparePassword,
+  type AuthRequest
+} from "./auth";
+import {
+  loginSchema,
+  registerSchema,
+  insertModelSchema,
+} from "@shared/schema";
+import { randomUUID } from "crypto";
+import bcrypt from "bcryptjs";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Health check endpoint
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "healthy", timestamp: new Date().toISOString() });
-  });
+  // Middleware
+  app.use(cookieParser());
 
-  // Dashboard stats
-  app.get("/api/dashboard/stats", (_req, res) => {
-    res.json(dashboardStats);
-  });
+  // ==================== AUTH ROUTES ====================
 
-  // Models API
-  app.get("/api/models", (_req, res) => {
-    res.json(models);
-  });
+  // Register
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
+    try {
+      const parsed = registerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
 
-  app.get("/api/models/:id", (req, res) => {
-    const model = models.find(m => m.id === req.params.id);
-    if (!model) {
-      return res.status(404).json({ error: "Model not found" });
+      const { username, email, password, name } = parsed.data;
+
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(409).json({ error: "Username already exists" });
+      }
+
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) {
+        return res.status(409).json({ error: "Email already exists" });
+      }
+
+      const user = await storage.createUser({ username, email, password, name });
+      const token = generateToken({ id: user.id, username: user.username, email: user.email, name: user.name });
+
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      res.status(201).json({
+        user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team },
+        token,
+      });
+    } catch (error) {
+      console.error("Register error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
-    res.json(model);
   });
 
-  app.post("/api/models", (req, res) => {
-    const newModel = {
-      id: `model_${Date.now()}`,
-      ...req.body,
-      createdAt: new Date().toISOString().split('T')[0],
-      lastUpdated: new Date().toISOString().split('T')[0],
-    };
-    models.push(newModel);
-    res.status(201).json(newModel);
-  });
+  // Login
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const parsed = loginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input" });
+      }
 
-  app.patch("/api/models/:id", (req, res) => {
-    const modelIndex = models.findIndex(m => m.id === req.params.id);
-    if (modelIndex === -1) {
-      return res.status(404).json({ error: "Model not found" });
+      const { username, password } = parsed.data;
+      const user = await storage.getUserByUsername(username);
+
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const validPassword = await comparePassword(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const token = generateToken({ id: user.id, username: user.username, email: user.email, name: user.name });
+
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      res.json({
+        user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team },
+        token,
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
-    models[modelIndex] = { ...models[modelIndex], ...req.body, lastUpdated: new Date().toISOString().split('T')[0] };
-    res.json(models[modelIndex]);
   });
 
-  app.delete("/api/models/:id", (req, res) => {
-    const modelIndex = models.findIndex(m => m.id === req.params.id);
-    if (modelIndex === -1) {
-      return res.status(404).json({ error: "Model not found" });
+  // Logout
+  app.post("/api/auth/logout", (_req: Request, res: Response) => {
+    res.clearCookie("token");
+    res.json({ message: "Logged out successfully" });
+  });
+
+  // Get current user
+  app.get("/api/auth/me", authMiddleware, async (req: AuthRequest, res: Response) => {
+    const user = await storage.getUser(req.user!.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
     }
-    models.splice(modelIndex, 1);
-    res.status(204).send();
-  });
-
-  // Experiments API
-  app.get("/api/experiments", (_req, res) => {
-    res.json(experiments);
-  });
-
-  app.get("/api/experiments/:id", (req, res) => {
-    const experiment = experiments.find(e => e.id === req.params.id);
-    if (!experiment) {
-      return res.status(404).json({ error: "Experiment not found" });
-    }
-    res.json(experiment);
-  });
-
-  app.post("/api/experiments", (req, res) => {
-    const newExperiment = {
-      id: `exp_${Date.now()}`,
-      ...req.body,
-      date: new Date().toISOString().split('T')[0],
-      status: "running",
-    };
-    experiments.push(newExperiment);
-    res.status(201).json(newExperiment);
-  });
-
-  // Features API
-  app.get("/api/features", (_req, res) => {
-    res.json(features);
-  });
-
-  app.get("/api/features/:id", (req, res) => {
-    const feature = features.find(f => f.id === req.params.id);
-    if (!feature) {
-      return res.status(404).json({ error: "Feature not found" });
-    }
-    res.json(feature);
-  });
-
-  app.post("/api/features", (req, res) => {
-    const newFeature = {
-      id: `fs_${Date.now()}`,
-      ...req.body,
-      created: new Date().toISOString().split('T')[0],
-      status: "staging",
-    };
-    features.push(newFeature);
-    res.status(201).json(newFeature);
-  });
-
-  // Simulator/Prediction API
-  app.post("/api/predict", (req, res) => {
-    const { creditScore, annualIncome, debtToIncome, age, loanAmount } = req.body;
-
-    // Simple mock prediction logic
-    let score = 0.5;
-    if (creditScore > 700) score += 0.2;
-    if (annualIncome > 50000) score += 0.1;
-    if (debtToIncome < 40) score += 0.1;
-    if (age > 25 && age < 60) score += 0.05;
-    if (loanAmount < annualIncome * 0.3) score += 0.05;
-
-    // Add some randomness
-    score = Math.min(1, Math.max(0, score + (Math.random() - 0.5) * 0.1));
-
-    const risk = score > 0.7 ? "Low Risk" : score > 0.4 ? "Moderate Risk" : "High Risk";
-
     res.json({
-      score: parseFloat(score.toFixed(3)),
-      risk,
-      confidence: parseFloat((0.85 + Math.random() * 0.1).toFixed(3)),
-      factors: [
-        { name: "Credit Score", impact: creditScore > 700 ? "positive" : "negative", weight: 0.35 },
-        { name: "Annual Income", impact: annualIncome > 50000 ? "positive" : "neutral", weight: 0.25 },
-        { name: "Debt-to-Income", impact: debtToIncome < 40 ? "positive" : "negative", weight: 0.20 },
-        { name: "Age", impact: age > 25 && age < 60 ? "positive" : "neutral", weight: 0.10 },
-        { name: "Loan Amount", impact: loanAmount < annualIncome * 0.3 ? "positive" : "negative", weight: 0.10 },
-      ]
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      team: user.team,
+      avatarUrl: user.avatarUrl,
+    });
+  });
+
+  // ==================== DASHBOARD ROUTES ====================
+
+  app.get("/api/dashboard/stats", optionalAuth, async (_req: AuthRequest, res: Response) => {
+    try {
+      const stats = await storage.getDashboardStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
+  // ==================== MODELS ROUTES ====================
+
+  app.get("/api/models", optionalAuth, async (_req: Request, res: Response) => {
+    try {
+      const models = await storage.getModels();
+      res.json(models);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch models" });
+    }
+  });
+
+  app.get("/api/models/:id", async (req: Request, res: Response) => {
+    try {
+      const model = await storage.getModel(req.params.id);
+      if (!model) {
+        return res.status(404).json({ error: "Model not found" });
+      }
+      res.json(model);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch model" });
+    }
+  });
+
+  app.post("/api/models", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const model = await storage.createModel({
+        ...req.body,
+        authorId: req.user!.id,
+      });
+      res.status(201).json(model);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create model" });
+    }
+  });
+
+  app.patch("/api/models/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const model = await storage.updateModel(req.params.id, req.body);
+      if (!model) {
+        return res.status(404).json({ error: "Model not found" });
+      }
+      res.json(model);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update model" });
+    }
+  });
+
+  app.delete("/api/models/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const success = await storage.deleteModel(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Model not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete model" });
+    }
+  });
+
+  // Promote model
+  app.post("/api/models/:id/promote", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const { stage } = req.body;
+      if (!["development", "staging", "production", "archived"].includes(stage)) {
+        return res.status(400).json({ error: "Invalid stage" });
+      }
+      const model = await storage.updateModel(req.params.id, { stage });
+      if (!model) {
+        return res.status(404).json({ error: "Model not found" });
+      }
+
+      await storage.createAlert({
+        type: "model",
+        severity: "info",
+        message: `Model "${model.name}" promoted to ${stage}`,
+        modelId: model.id,
+        pipelineId: null,
+        isRead: false,
+        userId: req.user!.id,
+      });
+
+      res.json(model);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to promote model" });
+    }
+  });
+
+  // ==================== EXPERIMENTS ROUTES ====================
+
+  app.get("/api/experiments", optionalAuth, async (_req: Request, res: Response) => {
+    try {
+      const experiments = await storage.getExperiments();
+      res.json(experiments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch experiments" });
+    }
+  });
+
+  app.get("/api/experiments/:id", async (req: Request, res: Response) => {
+    try {
+      const experiment = await storage.getExperiment(req.params.id);
+      if (!experiment) {
+        return res.status(404).json({ error: "Experiment not found" });
+      }
+      res.json(experiment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch experiment" });
+    }
+  });
+
+  app.post("/api/experiments", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const experiment = await storage.createExperiment({
+        ...req.body,
+        authorId: req.user!.id,
+        status: "running",
+      });
+      res.status(201).json(experiment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create experiment" });
+    }
+  });
+
+  app.patch("/api/experiments/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const experiment = await storage.updateExperiment(req.params.id, req.body);
+      if (!experiment) {
+        return res.status(404).json({ error: "Experiment not found" });
+      }
+      res.json(experiment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update experiment" });
+    }
+  });
+
+  app.post("/api/experiments/:id/stop", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const experiment = await storage.updateExperiment(req.params.id, { status: "stopped" });
+      if (!experiment) {
+        return res.status(404).json({ error: "Experiment not found" });
+      }
+      res.json(experiment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to stop experiment" });
+    }
+  });
+
+  // ==================== FEATURES ROUTES ====================
+
+  app.get("/api/features", optionalAuth, async (_req: Request, res: Response) => {
+    try {
+      const features = await storage.getFeatures();
+      res.json(features);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch features" });
+    }
+  });
+
+  app.get("/api/features/:id", async (req: Request, res: Response) => {
+    try {
+      const feature = await storage.getFeature(req.params.id);
+      if (!feature) {
+        return res.status(404).json({ error: "Feature not found" });
+      }
+      res.json(feature);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch feature" });
+    }
+  });
+
+  app.post("/api/features", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const feature = await storage.createFeature({
+        ...req.body,
+        authorId: req.user!.id,
+      });
+      res.status(201).json(feature);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create feature" });
+    }
+  });
+
+  app.patch("/api/features/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const feature = await storage.updateFeature(req.params.id, req.body);
+      if (!feature) {
+        return res.status(404).json({ error: "Feature not found" });
+      }
+      res.json(feature);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update feature" });
+    }
+  });
+
+  app.delete("/api/features/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const success = await storage.deleteFeature(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Feature not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete feature" });
+    }
+  });
+
+  // ==================== PIPELINES ROUTES ====================
+
+  app.get("/api/pipelines", optionalAuth, async (_req: Request, res: Response) => {
+    try {
+      const pipelines = await storage.getPipelines();
+      const pipelinesWithSteps = await Promise.all(
+        pipelines.map(async (p) => {
+          const steps = await storage.getPipelineSteps(p.id);
+          return { ...p, steps };
+        })
+      );
+      res.json(pipelinesWithSteps);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch pipelines" });
+    }
+  });
+
+  app.get("/api/pipelines/:id", async (req: Request, res: Response) => {
+    try {
+      const pipeline = await storage.getPipeline(req.params.id);
+      if (!pipeline) {
+        return res.status(404).json({ error: "Pipeline not found" });
+      }
+      const steps = await storage.getPipelineSteps(pipeline.id);
+      res.json({ ...pipeline, steps });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch pipeline" });
+    }
+  });
+
+  app.post("/api/pipelines", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const pipeline = await storage.createPipeline({
+        ...req.body,
+        authorId: req.user!.id,
+      });
+      res.status(201).json(pipeline);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create pipeline" });
+    }
+  });
+
+  app.patch("/api/pipelines/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const pipeline = await storage.updatePipeline(req.params.id, req.body);
+      if (!pipeline) {
+        return res.status(404).json({ error: "Pipeline not found" });
+      }
+      res.json(pipeline);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update pipeline" });
+    }
+  });
+
+  // Run pipeline
+  app.post("/api/pipelines/:id/run", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const pipeline = await storage.getPipeline(req.params.id);
+      if (!pipeline) {
+        return res.status(404).json({ error: "Pipeline not found" });
+      }
+
+      await storage.updatePipeline(req.params.id, {
+        status: "running",
+        lastRunAt: new Date(),
+      });
+
+      const steps = await storage.getPipelineSteps(req.params.id);
+      for (const step of steps) {
+        await storage.updatePipelineStep(step.id, {
+          status: step.order === 1 ? "running" : "pending",
+          startedAt: step.order === 1 ? new Date() : null,
+          completedAt: null,
+          duration: null,
+        });
+      }
+
+      await storage.createAlert({
+        type: "pipeline",
+        severity: "info",
+        message: `Pipeline "${pipeline.name}" started`,
+        modelId: null,
+        pipelineId: pipeline.id,
+        isRead: false,
+        userId: req.user!.id,
+      });
+
+      const updatedPipeline = await storage.getPipeline(req.params.id);
+      const updatedSteps = await storage.getPipelineSteps(req.params.id);
+      res.json({ ...updatedPipeline, steps: updatedSteps });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to run pipeline" });
+    }
+  });
+
+  app.post("/api/pipelines/:id/stop", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const pipeline = await storage.updatePipeline(req.params.id, { status: "idle" });
+      if (!pipeline) {
+        return res.status(404).json({ error: "Pipeline not found" });
+      }
+      res.json(pipeline);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to stop pipeline" });
+    }
+  });
+
+  // ==================== LABELING ROUTES ====================
+
+  app.get("/api/labeling-tasks", optionalAuth, async (_req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getLabelingTasks();
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch labeling tasks" });
+    }
+  });
+
+  app.get("/api/labeling-tasks/:id", async (req: Request, res: Response) => {
+    try {
+      const task = await storage.getLabelingTask(req.params.id);
+      if (!task) {
+        return res.status(404).json({ error: "Labeling task not found" });
+      }
+      res.json(task);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch labeling task" });
+    }
+  });
+
+  app.post("/api/labeling-tasks", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const task = await storage.createLabelingTask({
+        ...req.body,
+        authorId: req.user!.id,
+      });
+      res.status(201).json(task);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create labeling task" });
+    }
+  });
+
+  app.post("/api/labeling-tasks/:id/labels", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const label = await storage.createLabel({
+        ...req.body,
+        taskId: req.params.id,
+        labeledBy: req.user!.id,
+      });
+      res.status(201).json(label);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create label" });
+    }
+  });
+
+  // ==================== PREDICTIONS ROUTES ====================
+
+  app.post("/api/predict", optionalAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { modelId, creditScore, annualIncome, debtToIncome, age, loanAmount } = req.body;
+      const startTime = Date.now();
+
+      let score = 0.5;
+      if (creditScore > 700) score += 0.2;
+      if (creditScore > 750) score += 0.1;
+      if (annualIncome > 50000) score += 0.1;
+      if (annualIncome > 100000) score += 0.05;
+      if (debtToIncome < 30) score += 0.15;
+      else if (debtToIncome < 40) score += 0.1;
+      if (age > 25 && age < 55) score += 0.05;
+      if (loanAmount < annualIncome * 0.3) score += 0.1;
+
+      score = Math.min(1, Math.max(0, score + (Math.random() - 0.5) * 0.05));
+
+      const risk = score > 0.75 ? "Low Risk" : score > 0.45 ? "Moderate Risk" : "High Risk";
+      const latency = Date.now() - startTime + Math.floor(Math.random() * 50);
+
+      const factors = [
+        { name: "Credit Score", value: creditScore, impact: creditScore > 700 ? "positive" : "negative", weight: 0.35 },
+        { name: "Annual Income", value: annualIncome, impact: annualIncome > 50000 ? "positive" : "neutral", weight: 0.25 },
+        { name: "Debt-to-Income Ratio", value: debtToIncome, impact: debtToIncome < 40 ? "positive" : "negative", weight: 0.20 },
+        { name: "Applicant Age", value: age, impact: age > 25 && age < 55 ? "positive" : "neutral", weight: 0.10 },
+        { name: "Loan Amount", value: loanAmount, impact: loanAmount < annualIncome * 0.3 ? "positive" : "negative", weight: 0.10 },
+      ];
+
+      const result = {
+        score: parseFloat(score.toFixed(4)),
+        risk,
+        confidence: parseFloat((0.85 + Math.random() * 0.12).toFixed(3)),
+        latency,
+        factors,
+        modelVersion: "3.2.1",
+        timestamp: new Date().toISOString(),
+      };
+
+      if (req.user) {
+        await storage.createPrediction({
+          modelId: modelId || "model_001",
+          userId: req.user.id,
+          inputs: { creditScore, annualIncome, debtToIncome, age, loanAmount },
+          outputs: result,
+          score: result.score,
+          risk: result.risk,
+          latency: result.latency,
+        });
+      }
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Prediction failed" });
+    }
+  });
+
+  app.get("/api/predictions", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const predictions = await storage.getPredictions(req.user!.id);
+      res.json(predictions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch predictions" });
+    }
+  });
+
+  // ==================== ALERTS ROUTES ====================
+
+  app.get("/api/alerts", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const alerts = await storage.getAlerts(req.user!.id);
+      res.json(alerts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch alerts" });
+    }
+  });
+
+  app.patch("/api/alerts/:id/read", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const alert = await storage.markAlertRead(req.params.id);
+      if (!alert) {
+        return res.status(404).json({ error: "Alert not found" });
+      }
+      res.json(alert);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to mark alert as read" });
+    }
+  });
+
+  // ==================== SETTINGS ROUTES ====================
+
+  app.get("/api/settings", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const settings = await storage.getUserSettings(req.user!.id);
+      res.json(settings || {});
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.patch("/api/settings", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const settings = await storage.updateUserSettings(req.user!.id, req.body);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  app.patch("/api/user/profile", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const { name, email, role, team } = req.body;
+      const user = await storage.updateUser(req.user!.id, { name, email, role, team });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
+  // ==================== API KEYS ROUTES ====================
+
+  app.get("/api/api-keys", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const keys = await storage.getApiKeys(req.user!.id);
+      res.json(keys.map(k => ({ ...k, keyHash: undefined })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch API keys" });
+    }
+  });
+
+  app.post("/api/api-keys", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const { name, environment } = req.body;
+      const rawKey = `llmf_${environment === "production" ? "prod" : "dev"}_${randomUUID().replace(/-/g, "")}`;
+      const keyHash = await bcrypt.hash(rawKey, 10);
+
+      const apiKey = await storage.createApiKey({
+        userId: req.user!.id,
+        name,
+        keyHash,
+        keyPrefix: rawKey.slice(0, 15),
+        environment,
+      });
+
+      res.status(201).json({ ...apiKey, rawKey, keyHash: undefined });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create API key" });
+    }
+  });
+
+  app.delete("/api/api-keys/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const success = await storage.deleteApiKey(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "API key not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete API key" });
+    }
+  });
+
+  // ==================== HEALTH CHECK ====================
+
+  app.get("/api/health", (_req: Request, res: Response) => {
+    res.json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      version: "1.0.0",
+      uptime: process.uptime(),
     });
   });
 
   return httpServer;
 }
+

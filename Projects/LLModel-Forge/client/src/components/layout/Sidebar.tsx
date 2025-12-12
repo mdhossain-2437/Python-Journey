@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
-import { 
+import { useAuth } from "@/hooks/use-auth";
+import {
   LayoutDashboard, 
   Database, 
   TestTube2, 
@@ -8,7 +9,8 @@ import {
   Settings,
   Activity,
   Box,
-  Workflow
+  Workflow,
+  LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +27,16 @@ const navigation = [
 
 export function Sidebar() {
   const [location] = useLocation();
+  const { user, logout } = useAuth();
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   return (
     <div className="flex h-screen w-64 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
@@ -46,7 +58,7 @@ export function Sidebar() {
               )}>
                   <item.icon
                     className={cn(
-                      "mr-3 h-5 w-5 flex-shrink-0 transition-colors",
+                      "mr-3 h-5 w-5 shrink-0 transition-colors",
                       isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                     )}
                   />
@@ -57,17 +69,23 @@ export function Sidebar() {
         </nav>
       </div>
 
-      <div className="border-t border-border p-4">
+      <div className="border-t border-border p-4 space-y-2">
         <div className="flex items-center gap-3 rounded-md bg-sidebar-accent/50 p-3">
           <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-mono text-xs font-bold">
-            JS
+            {user?.name ? getInitials(user.name) : "U"}
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium">Jane Smith</span>
-            <span className="text-xs text-muted-foreground">ML Engineer</span>
+          <div className="flex flex-col flex-1 min-w-0">
+            <span className="text-sm font-medium truncate">{user?.name || "User"}</span>
+            <span className="text-xs text-muted-foreground truncate">{user?.role || "ML Engineer"}</span>
           </div>
-          <Settings className="ml-auto h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" />
         </div>
+        <button
+          onClick={logout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign Out
+        </button>
       </div>
     </div>
   );
