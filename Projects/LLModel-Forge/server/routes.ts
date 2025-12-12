@@ -54,7 +54,21 @@ export async function registerRoutes(
   app.use(cookieParser());
 
   // ==================== WEBSOCKET SERVER ====================
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+  const wss = new WebSocketServer({ noServer: true });
+
+  // Handle WebSocket upgrade requests
+  httpServer.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url || "", `http://${request.headers.host}`);
+
+    // Only handle /ws path
+    if (url.pathname === "/ws") {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 
   wss.on("connection", (ws, req) => {
     const url = new URL(req.url || "", `http://${req.headers.host}`);
