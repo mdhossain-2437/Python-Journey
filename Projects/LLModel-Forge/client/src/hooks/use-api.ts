@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthFetch } from "./use-auth";
+import { secureStorage } from "@/lib/secure-storage";
 
 // Types
 export interface Model {
@@ -365,7 +366,7 @@ export function useAlerts() {
   return useQuery<Alert[]>({
     queryKey: ["alerts"],
     queryFn: async () => {
-      const token = localStorage.getItem("token");
+      const token = secureStorage.getItem("llmf_token");
       if (!token) return [];
       const res = await authFetch("/api/alerts");
       if (!res.ok) throw new Error("Failed to fetch alerts");
