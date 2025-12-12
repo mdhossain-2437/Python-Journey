@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Activity, Loader2, Eye, EyeOff } from "lucide-react";
+import { Activity, Loader2, Eye, EyeOff, Github, Chrome } from "lucide-react";
+import { secureStorage } from "@/lib/secure-storage";
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -12,23 +13,48 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
-  const [, setLocation] = useLocation();
+  const { login, loginWithOAuth } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  // Handle OAuth callback with token in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    const oauthError = params.get("error");
+
+    if (token) {
+      secureStorage.setItem("llmf_token", token);
+      window.history.replaceState({}, "", "/");
+      window.location.reload();
+    }
+
+    if (oauthError) {
+      setError("OAuth authentication failed. Please try again.");
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
-    const result = await login(username, password);
+    try {
+      const result = await login(username, password);
 
-    if (result.success) {
-      setLocation("/");
-    } else {
-      setError(result.error || "Login failed");
+      if (result.success) {
+        setLocation("/");
+      } else {
+        setError(result.error || "Login failed");
+      }
+    } catch (err) {
+      setError("An unexpected error occurred");
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    setIsLoading(false);
+  const handleOAuthLogin = (provider: "github" | "google") => {
+    loginWithOAuth(provider);
   };
 
   return (
@@ -52,7 +78,34 @@ export default function Login() {
               Sign in to your account to continue
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
+            {/* OAuth Buttons */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handleOAuthLogin("github")}
+                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-border bg-card hover:bg-muted transition-colors font-medium text-sm"
+              >
+                <Github className="h-4 w-4" />
+                GitHub
+              </button>
+              <button
+                onClick={() => handleOAuthLogin("google")}
+                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-border bg-card hover:bg-muted transition-colors font-medium text-sm"
+              >
+                <Chrome className="h-4 w-4" />
+                Google
+              </button>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+              </div>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
                 <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm">
@@ -71,6 +124,7 @@ export default function Login() {
                   required
                   className="bg-card border-border"
                   autoComplete="username"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -86,11 +140,13 @@ export default function Login() {
                     required
                     className="bg-card border-border pr-10"
                     autoComplete="current-password"
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -113,7 +169,7 @@ export default function Login() {
               </button>
             </form>
 
-            <div className="mt-6 text-center text-sm">
+            <div className="text-center text-sm">
               <span className="text-muted-foreground">Don't have an account? </span>
               <Link href="/register" className="text-primary hover:underline font-medium">
                 Create one
@@ -121,7 +177,7 @@ export default function Login() {
             </div>
 
             {/* Demo credentials */}
-            <div className="mt-6 p-4 rounded-lg bg-muted/50 border border-border">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border">
               <p className="text-xs font-medium text-muted-foreground mb-2">Demo Credentials:</p>
               <div className="text-xs space-y-1">
                 <p><span className="text-muted-foreground">Username:</span> <code className="text-primary">demo</code></p>
@@ -130,6 +186,10 @@ export default function Login() {
             </div>
           </CardContent>
         </Card>
+
+        <p className="text-center text-xs text-muted-foreground">
+          By signing in, you agree to our Terms of Service and Privacy Policy
+        </p>
       </div>
     </div>
   );
