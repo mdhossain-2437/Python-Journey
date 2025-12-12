@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import cookieParser from "cookie-parser";
 import { storage } from "./storage";
 import {
@@ -12,10 +13,38 @@ import {
 import {
   loginSchema,
   registerSchema,
-  insertModelSchema,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+// WebSocket clients map
+const wsClients = new Map<string, Set<WebSocket>>();
+
+// Broadcast to all clients in a channel
+function broadcast(channel: string, data: any) {
+  const clients = wsClients.get(channel);
+  if (clients) {
+    const message = JSON.stringify({ channel, data, timestamp: new Date().toISOString() });
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+}
+
+// Broadcast to all connected clients
+function broadcastAll(data: any) {
+  const message = JSON.stringify({ ...data, timestamp: new Date().toISOString() });
+  wsClients.forEach((clients) => {
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  });
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -23,6 +52,88 @@ export async function registerRoutes(
 ): Promise<Server> {
   // Middleware
   app.use(cookieParser());
+
+  // ==================== WEBSOCKET SERVER ====================
+  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  wss.on("connection", (ws, req) => {
+    const url = new URL(req.url || "", `http://${req.headers.host}`);
+    const token = url.searchParams.get("token");
+
+    let userId: string | null = null;
+
+    // Verify token if provided
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || "llmodel-forge-secret-key") as any;
+        userId = decoded.id;
+        console.log(`WebSocket connected: user ${userId}`);
+      } catch (err) {
+        console.log("WebSocket: Invalid token, allowing anonymous connection");
+      }
+    }
+
+    // Add to general channel
+    const generalChannel = "general";
+    if (!wsClients.has(generalChannel)) {
+      wsClients.set(generalChannel, new Set());
+    }
+    wsClients.get(generalChannel)?.add(ws);
+
+    // Send welcome message
+    ws.send(JSON.stringify({
+      type: "connected",
+      message: "Connected to LLModel-Forge WebSocket",
+      userId,
+      timestamp: new Date().toISOString()
+    }));
+
+    // Handle incoming messages
+    ws.on("message", (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+
+        // Handle subscription requests
+        if (data.type === "subscribe" && data.channel) {
+          if (!wsClients.has(data.channel)) {
+            wsClients.set(data.channel, new Set());
+          }
+          wsClients.get(data.channel)?.add(ws);
+          ws.send(JSON.stringify({ type: "subscribed", channel: data.channel }));
+        }
+
+        // Handle unsubscribe
+        if (data.type === "unsubscribe" && data.channel) {
+          wsClients.get(data.channel)?.delete(ws);
+          ws.send(JSON.stringify({ type: "unsubscribed", channel: data.channel }));
+        }
+
+        // Handle ping
+        if (data.type === "ping") {
+          ws.send(JSON.stringify({ type: "pong", timestamp: new Date().toISOString() }));
+        }
+      } catch (err) {
+        console.error("WebSocket message error:", err);
+      }
+    });
+
+    // Handle disconnect
+    ws.on("close", () => {
+      console.log(`WebSocket disconnected: user ${userId || "anonymous"}`);
+      wsClients.forEach((clients) => {
+        clients.delete(ws);
+      });
+    });
+
+    // Handle errors
+    ws.on("error", (error) => {
+      console.error("WebSocket error:", error);
+    });
+  });
+
+  // Make broadcast available for other modules
+  (app as any).wsBroadcast = broadcast;
+  (app as any).wsBroadcastAll = broadcastAll;
 
   // ==================== AUTH ROUTES ====================
 

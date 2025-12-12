@@ -1,77 +1,105 @@
-// Secure storage utility with fallback for restricted contexts
-// Handles "Access to storage is not allowed from this context" errors
+/**
+ * Secure Storage Utility
+ *
+ * Provides a bulletproof storage abstraction that:
+ * - Works in all browser contexts (including private browsing, iframes, etc.)
+ * - Never throws unhandled errors
+ * - Gracefully falls back to in-memory storage when localStorage is unavailable
+ * - Suppresses console errors from storage access attempts
+ */
 
-class SecureStorage {
-  private memoryStorage: Map<string, string> = new Map();
-  private storageAvailable: boolean | null = null;
+// In-memory fallback storage
+const memoryStore = new Map<string, string>();
 
-  private isStorageAvailable(): boolean {
-    // Return cached result
-    if (this.storageAvailable !== null) {
-      return this.storageAvailable;
-    }
+// Track whether we've already determined localStorage availability
+let localStorageAvailable: boolean | null = null;
 
-    // Check if window and localStorage exist
-    if (typeof window === 'undefined') {
-      this.storageAvailable = false;
-      return false;
-    }
-
-    try {
-      const storage = window.localStorage;
-      const testKey = '__llmf_test__';
-      storage.setItem(testKey, 'test');
-      storage.removeItem(testKey);
-      this.storageAvailable = true;
-      return true;
-    } catch (e) {
-      // Storage not available (private mode, iframe, etc.)
-      this.storageAvailable = false;
-      return false;
-    }
+/**
+ * Safely check if localStorage is available
+ * Returns cached result after first check
+ */
+function checkLocalStorageAvailable(): boolean {
+  if (localStorageAvailable !== null) {
+    return localStorageAvailable;
   }
 
+  try {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      localStorageAvailable = false;
+      return false;
+    }
+
+    // Try to actually use localStorage
+    const testKey = '__llmforge_storage_test__';
+    window.localStorage.setItem(testKey, 'test');
+    window.localStorage.removeItem(testKey);
+    localStorageAvailable = true;
+    return true;
+  } catch {
+    // Any error means localStorage is not available
+    localStorageAvailable = false;
+    return false;
+  }
+}
+
+/**
+ * SecureStorage class - singleton pattern
+ */
+class SecureStorageImpl {
+  /**
+   * Get an item from storage
+   */
   getItem(key: string): string | null {
-    // Try memory first
-    const memValue = this.memoryStorage.get(key);
+    // First check memory (fastest)
+    const memValue = memoryStore.get(key);
     if (memValue !== undefined) {
       return memValue;
     }
 
     // Try localStorage if available
-    if (this.isStorageAvailable()) {
+    if (checkLocalStorageAvailable()) {
       try {
         const value = window.localStorage.getItem(key);
         if (value !== null) {
-          // Cache in memory
-          this.memoryStorage.set(key, value);
+          // Sync to memory for faster future access
+          memoryStore.set(key, value);
         }
         return value;
       } catch {
-        // Silent fail
+        // Silent fail - return null
       }
     }
+
     return null;
   }
 
+  /**
+   * Set an item in storage
+   */
   setItem(key: string, value: string): void {
-    // Always store in memory
-    this.memoryStorage.set(key, value);
+    // Always store in memory first (guaranteed to work)
+    memoryStore.set(key, value);
 
-    // Also try localStorage
-    if (this.isStorageAvailable()) {
+    // Try localStorage if available
+    if (checkLocalStorageAvailable()) {
       try {
         window.localStorage.setItem(key, value);
       } catch {
-        // Silent fail - data is in memory
+        // Silent fail - data is safely in memory
       }
     }
   }
 
+  /**
+   * Remove an item from storage
+   */
   removeItem(key: string): void {
-    this.memoryStorage.delete(key);
+    // Remove from memory
+    memoryStore.delete(key);
 
-    if (this.isStorageAvailable()) {
+    // Try to remove from localStorage
+    if (checkLocalStorageAvailable()) {
       try {
         window.localStorage.removeItem(key);
       } catch {
@@ -80,18 +108,47 @@ class SecureStorage {
     }
   }
 
+  /**
+   * Clear all storage
+   */
   clear(): void {
-    this.memoryStorage.clear();
+    memoryStore.clear();
 
-    if (this.isStorageAvailable()) {
+    if (checkLocalStorageAvailable()) {
       try {
-        window.localStorage.clear();
+        // Only clear our keys, not all localStorage
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i);
+          if (key?.startsWith('llmf_')) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => window.localStorage.removeItem(key));
       } catch {
         // Silent fail
       }
     }
   }
+
+  /**
+   * Check if persistent storage is available
+   */
+  isPersistent(): boolean {
+    return checkLocalStorageAvailable();
+  }
+
+  /**
+   * Get all keys in storage
+   */
+  keys(): string[] {
+    return Array.from(memoryStore.keys());
+  }
 }
 
-export const secureStorage = new SecureStorage();
+// Export singleton instance
+export const secureStorage = new SecureStorageImpl();
+
+// Also export as default
+export default secureStorage;
 

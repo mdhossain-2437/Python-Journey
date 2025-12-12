@@ -18,7 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  loginWithOAuth: (provider: "github" | "google") => Promise<void>;
+  loginWithOAuth: (provider: "github" | "google") => void;
   register: (data: { username: string; email: string; password: string; name: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
@@ -38,12 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = useCallback(async () => {
     try {
+      // Try to get stored token
       const storedToken = secureStorage.getItem(TOKEN_KEY);
+
       if (!storedToken) {
         setIsLoading(false);
         return;
       }
 
+      // Verify token with server
       const response = await fetch("/api/auth/me", {
         headers: {
           Authorization: `Bearer ${storedToken}`,
@@ -57,13 +60,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(storedToken);
         secureStorage.setItem(USER_KEY, JSON.stringify(userData));
       } else {
-        // Token expired or invalid
+        // Token invalid - clear storage
         secureStorage.removeItem(TOKEN_KEY);
         secureStorage.removeItem(USER_KEY);
+        setUser(null);
+        setToken(null);
       }
     } catch (error) {
-      console.error("Auth check failed:", error);
-      // Don't remove token on network errors
+      // Network error - try to use cached user data
+      console.warn("Auth check failed, using cached data if available");
+      const cachedUser = secureStorage.getItem(USER_KEY);
+      const cachedToken = secureStorage.getItem(TOKEN_KEY);
+
+      if (cachedUser && cachedToken) {
+        try {
+          setUser(JSON.parse(cachedUser));
+          setToken(cachedToken);
+        } catch {
+          // Invalid cached data
+          secureStorage.removeItem(TOKEN_KEY);
+          secureStorage.removeItem(USER_KEY);
+        }
+      }
     } finally {
       setIsLoading(false);
     }
@@ -99,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const loginWithOAuth = async (provider: "github" | "google") => {
+  const loginWithOAuth = (provider: "github" | "google") => {
     // Redirect to OAuth flow
     window.location.href = `/api/auth/${provider}`;
   };
