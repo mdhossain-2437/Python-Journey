@@ -238,6 +238,98 @@ export async function registerRoutes(
     res.json({ message: "Logged out successfully" });
   });
 
+  // Firebase OAuth - Google
+  app.post("/api/auth/oauth/google", async (req: Request, res: Response) => {
+    try {
+      const { idToken, email, name, photoURL, uid } = req.body;
+
+      if (!email || !uid) {
+        return res.status(400).json({ error: "Missing required OAuth data" });
+      }
+
+      // Check if user exists by email
+      let user = await storage.getUserByEmail(email);
+
+      if (!user) {
+        // Create new user from OAuth
+        const username = email.split("@")[0] + "_" + uid.slice(0, 6);
+        user = await storage.createUser({
+          username,
+          email,
+          password: randomUUID(), // Random password for OAuth users
+          name: name || email.split("@")[0],
+          avatarUrl: photoURL,
+          provider: "google",
+          providerId: uid,
+        });
+      } else {
+        // Update avatar if changed
+        if (photoURL && user.avatarUrl !== photoURL) {
+          await storage.updateUser(user.id, { avatarUrl: photoURL });
+        }
+      }
+
+      const token = generateToken({ id: user.id, username: user.username, email: user.email, name: user.name });
+
+      const cookies = getCookieManager(req, res);
+      cookies.setToken(token, true);
+
+      res.json({
+        user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl },
+        token,
+      });
+    } catch (error) {
+      console.error("Google OAuth error:", error);
+      res.status(500).json({ error: "OAuth authentication failed" });
+    }
+  });
+
+  // Firebase OAuth - GitHub
+  app.post("/api/auth/oauth/github", async (req: Request, res: Response) => {
+    try {
+      const { idToken, email, name, photoURL, uid } = req.body;
+
+      if (!email || !uid) {
+        return res.status(400).json({ error: "Missing required OAuth data" });
+      }
+
+      // Check if user exists by email
+      let user = await storage.getUserByEmail(email);
+
+      if (!user) {
+        // Create new user from OAuth
+        const username = email.split("@")[0] + "_gh_" + uid.slice(0, 6);
+        user = await storage.createUser({
+          username,
+          email,
+          password: randomUUID(), // Random password for OAuth users
+          name: name || email.split("@")[0],
+          avatarUrl: photoURL,
+          provider: "github",
+          providerId: uid,
+        });
+      } else {
+        // Update avatar if changed
+        if (photoURL && user.avatarUrl !== photoURL) {
+          await storage.updateUser(user.id, { avatarUrl: photoURL });
+        }
+      }
+
+      const token = generateToken({ id: user.id, username: user.username, email: user.email, name: user.name });
+
+      const cookies = getCookieManager(req, res);
+      cookies.setToken(token, true);
+
+      res.json({
+        user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl },
+        token,
+      });
+    } catch (error) {
+      console.error("GitHub OAuth error:", error);
+      res.status(500).json({ error: "OAuth authentication failed" });
+    }
+  });
+
   // Get current user
   app.get("/api/auth/me", authMiddleware, async (req: AuthRequest, res: Response) => {
     const user = await storage.getUser(req.user!.id);
@@ -256,6 +348,32 @@ export async function registerRoutes(
   });
 
   // ==================== DASHBOARD ROUTES ====================
+
+  // Health check endpoint
+  app.get("/api/health", async (_req: Request, res: Response) => {
+    try {
+      // Check database connection
+      const dbHealthy = await storage.healthCheck?.() ?? true;
+
+      res.json({
+        status: dbHealthy ? "healthy" : "degraded",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0",
+        services: {
+          database: dbHealthy ? "up" : "down",
+          cache: true,
+          websocket: wsClients.size > 0,
+        },
+        uptime: process.uptime(),
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        error: "Service unavailable",
+      });
+    }
+  });
 
   app.get("/api/dashboard/stats", optionalAuth, async (_req: AuthRequest, res: Response) => {
     try {

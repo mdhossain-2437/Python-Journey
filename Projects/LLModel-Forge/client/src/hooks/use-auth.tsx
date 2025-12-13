@@ -1,6 +1,15 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { useLocation } from "wouter";
 import { secureStorage } from "@/lib/secure-storage";
+import {
+  signInWithGoogle,
+  signInWithGithub,
+  signOut as firebaseSignOut,
+  getIdToken,
+  onAuthChange,
+  isFirebaseConfigured,
+  handleRedirectResult,
+} from "@/lib/firebase";
 
 interface User {
   id: string;
@@ -10,6 +19,7 @@ interface User {
   role?: string;
   team?: string;
   avatarUrl?: string;
+  provider?: string; // 'email' | 'google' | 'github'
 }
 
 interface AuthContextType {
@@ -17,8 +27,10 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isFirebaseAvailable: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  loginWithOAuth: (provider: "github" | "google") => void;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  loginWithGithub: () => Promise<{ success: boolean; error?: string }>;
   register: (data: { username: string; email: string; password: string; name: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
@@ -122,6 +134,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `/api/auth/${provider}`;
   };
 
+  // Firebase Google OAuth
+  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!isFirebaseConfigured) {
+      return { success: false, error: "Google login is not configured. Please contact administrator." };
+    }
+
+    try {
+      const result = await signInWithGoogle();
+      if (!result) {
+        // Redirect flow started
+        return { success: true };
+      }
+
+      // Get Firebase ID token
+      const idToken = await result.user.getIdToken();
+
+      // Send to our backend to create/link account
+      const response = await fetch("/api/auth/oauth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          idToken,
+          email: result.user.email,
+          name: result.user.displayName,
+          photoURL: result.user.photoURL,
+          uid: result.user.uid,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "OAuth failed" }));
+        return { success: false, error: data.error || "Failed to authenticate with Google" };
+      }
+
+      const data = await response.json();
+      setUser({ ...data.user, provider: "google" });
+      setToken(data.token);
+      secureStorage.setItem(TOKEN_KEY, data.token);
+      secureStorage.setItem(USER_KEY, JSON.stringify({ ...data.user, provider: "google" }));
+      return { success: true };
+    } catch (error: any) {
+      console.error("Google login error:", error);
+      return { success: false, error: error.message || "Failed to login with Google" };
+    }
+  };
+
+  // Firebase GitHub OAuth
+  const loginWithGithub = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!isFirebaseConfigured) {
+      return { success: false, error: "GitHub login is not configured. Please contact administrator." };
+    }
+
+    try {
+      const result = await signInWithGithub();
+      if (!result) {
+        // Redirect flow started
+        return { success: true };
+      }
+
+      // Get Firebase ID token
+      const idToken = await result.user.getIdToken();
+
+      // Send to our backend to create/link account
+      const response = await fetch("/api/auth/oauth/github", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          idToken,
+          email: result.user.email,
+          name: result.user.displayName,
+          photoURL: result.user.photoURL,
+          uid: result.user.uid,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "OAuth failed" }));
+        return { success: false, error: data.error || "Failed to authenticate with GitHub" };
+      }
+
+      const data = await response.json();
+      setUser({ ...data.user, provider: "github" });
+      setToken(data.token);
+      secureStorage.setItem(TOKEN_KEY, data.token);
+      secureStorage.setItem(USER_KEY, JSON.stringify({ ...data.user, provider: "github" }));
+      return { success: true };
+    } catch (error: any) {
+      console.error("GitHub login error:", error);
+      return { success: false, error: error.message || "Failed to login with GitHub" };
+    }
+  };
+
   const register = async (data: { username: string; email: string; password: string; name: string }): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await fetch("/api/auth/register", {
@@ -189,6 +295,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Handle Firebase redirect result on page load
+  useEffect(() => {
+    handleRedirectResult().then(async (result) => {
+      if (result) {
+        const idToken = await result.user.getIdToken();
+        const provider = result.providerId?.includes("google") ? "google" : "github";
+
+        try {
+          const response = await fetch(`/api/auth/oauth/${provider}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              idToken,
+              email: result.user.email,
+              name: result.user.displayName,
+              photoURL: result.user.photoURL,
+              uid: result.user.uid,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setUser({ ...data.user, provider });
+            setToken(data.token);
+            secureStorage.setItem(TOKEN_KEY, data.token);
+            secureStorage.setItem(USER_KEY, JSON.stringify({ ...data.user, provider }));
+          }
+        } catch (error) {
+          console.error("OAuth redirect handling failed:", error);
+        }
+      }
+    });
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -196,8 +337,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isLoading,
         isAuthenticated: !!user && !!token,
+        isFirebaseAvailable: isFirebaseConfigured,
         login,
-        loginWithOAuth,
+        loginWithGoogle,
+        loginWithGithub,
         register,
         logout,
         updateUser,

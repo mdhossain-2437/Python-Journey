@@ -29,7 +29,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { login, loginWithOAuth } = useAuth();
+  const [oauthLoading, setOauthLoading] = useState<"github" | "google" | null>(null);
+  const { login, loginWithGoogle, loginWithGithub, isFirebaseAvailable } = useAuth();
   const [, setLocation] = useLocation();
 
   // Handle OAuth callback with token in URL
@@ -69,8 +70,38 @@ export default function Login() {
     }
   };
 
-  const handleOAuthLogin = (provider: "github" | "google") => {
-    loginWithOAuth(provider);
+  const handleGoogleLogin = async () => {
+    setError("");
+    setOauthLoading("google");
+    try {
+      const result = await loginWithGoogle();
+      if (result.success) {
+        setLocation("/");
+      } else if (result.error) {
+        setError(result.error);
+      }
+    } catch (err: any) {
+      setError(err.message || "Google login failed");
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const handleGithubLogin = async () => {
+    setError("");
+    setOauthLoading("github");
+    try {
+      const result = await loginWithGithub();
+      if (result.success) {
+        setLocation("/");
+      } else if (result.error) {
+        setError(result.error);
+      }
+    } catch (err: any) {
+      setError(err.message || "GitHub login failed");
+    } finally {
+      setOauthLoading(null);
+    }
   };
 
   return (
@@ -98,20 +129,36 @@ export default function Login() {
             {/* OAuth Buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => handleOAuthLogin("github")}
-                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-border bg-card hover:bg-muted transition-colors font-medium text-sm"
+                onClick={handleGithubLogin}
+                disabled={!isFirebaseAvailable || oauthLoading !== null}
+                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-border bg-card hover:bg-muted transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <GitHubIcon />
+                {oauthLoading === "github" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <GitHubIcon />
+                )}
                 GitHub
               </button>
               <button
-                onClick={() => handleOAuthLogin("google")}
-                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-border bg-card hover:bg-muted transition-colors font-medium text-sm"
+                onClick={handleGoogleLogin}
+                disabled={!isFirebaseAvailable || oauthLoading !== null}
+                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-border bg-card hover:bg-muted transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <GoogleIcon />
+                {oauthLoading === "google" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <GoogleIcon />
+                )}
                 Google
               </button>
             </div>
+
+            {!isFirebaseAvailable && (
+              <p className="text-xs text-center text-muted-foreground">
+                OAuth login requires Firebase configuration
+              </p>
+            )}
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
