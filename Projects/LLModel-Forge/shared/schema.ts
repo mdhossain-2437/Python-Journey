@@ -20,6 +20,8 @@ export const users = pgTable("users", {
   role: text("role").default("ML Engineer"),
   team: text("team").default("Data Science"),
   avatarUrl: text("avatar_url"),
+  provider: text("provider").default("email"), // 'email' | 'google' | 'github'
+  providerId: text("provider_id"), // OAuth provider user ID
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

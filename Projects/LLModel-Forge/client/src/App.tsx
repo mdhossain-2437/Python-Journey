@@ -101,7 +101,9 @@ function AppLayout() {
 function App() {
   return (
     <AuthProvider>
-      <AppLayout />
+      <SystemProvider>
+        <AppLayout />
+      </SystemProvider>
     </AuthProvider>
   );
 }

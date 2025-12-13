@@ -88,6 +88,9 @@ export interface IStorage {
 
   // Dashboard Stats
   getDashboardStats(): Promise<any>;
+
+  // Health Check
+  healthCheck?(): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -120,6 +123,8 @@ export class MemStorage implements IStorage {
       role: "ML Engineer",
       team: "Data Science",
       avatarUrl: null,
+      provider: "email",
+      providerId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -391,16 +396,20 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(u => u.email === email);
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
+  async createUser(insertUser: InsertUser & { provider?: string; providerId?: string; avatarUrl?: string }): Promise<User> {
     const id = randomUUID();
     const hashedPassword = await bcrypt.hash(insertUser.password, 10);
     const user: User = {
       id,
-      ...insertUser,
+      username: insertUser.username,
+      email: insertUser.email,
       password: hashedPassword,
+      name: insertUser.name,
       role: insertUser.role || "ML Engineer",
       team: insertUser.team || "Data Science",
-      avatarUrl: null,
+      avatarUrl: insertUser.avatarUrl || null,
+      provider: insertUser.provider || "email",
+      providerId: insertUser.providerId || null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
